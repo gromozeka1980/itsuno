@@ -135,6 +135,15 @@
     transition: all 0.15s;
   }
   .topnav-btn:hover { background: rgba(0, 0, 0, 0.04); }
+  .topnav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .topnav-btn:disabled:hover { background: transparent; }
+  .topnav-btn--icon {
+    width: 32px;
+    padding: 6px 0;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1;
+  }
   .topnav-btn--primary {
     background: var(--ink);
     color: #fff;
@@ -959,6 +968,8 @@
   <div class="topnav-title">Бенто-редактор<small>Валерий Рыжов · 1920×1080</small></div>
   <div class="topnav-spacer"></div>
   <div class="tabs" id="tabs"></div>
+  <button class="topnav-btn topnav-btn--icon" id="btn-undo" title="Отменить (Ctrl+Z)">↶</button>
+  <button class="topnav-btn topnav-btn--icon" id="btn-redo" title="Повторить (Ctrl+Shift+Z)">↷</button>
   <button class="topnav-btn" id="btn-newblock">+ Блок</button>
   <button class="topnav-btn" id="btn-import">Импорт</button>
   <button class="topnav-btn" id="btn-reset">Сбросить</button>
@@ -1698,7 +1709,7 @@ function bindSidebarHandlers() {
       updateGlobalReadouts();
     };
     el.addEventListener('input', handler);
-    el.addEventListener('change', handler);
+    el.addEventListener('change', () => { handler(); commit(); });
   });
 
   document.querySelectorAll('[data-b]').forEach(el => {
@@ -1718,7 +1729,7 @@ function bindSidebarHandlers() {
       updateBlockReadouts();
     };
     el.addEventListener('input', handler);
-    el.addEventListener('change', handler);
+    el.addEventListener('change', () => { handler(); commit(); });
   });
 
   document.querySelectorAll('[data-type]').forEach(el => {
@@ -1740,6 +1751,7 @@ function bindSidebarHandlers() {
         b.gradient = null; b.image = null;
       }
       renderAll();
+      commit();
     });
   });
 
@@ -1749,6 +1761,7 @@ function bindSidebarHandlers() {
       b.type = 'gradient';
       b.gradient = el.dataset.grad;
       renderAll();
+      commit();
     });
   });
 
@@ -1759,6 +1772,7 @@ function bindSidebarHandlers() {
       b.image = el.dataset.img;
       if (!b.imageLabel && IMAGES[b.image]) b.imageLabel = IMAGES[b.image].name;
       renderAll();
+      commit();
     });
   });
 
@@ -1768,6 +1782,7 @@ function bindSidebarHandlers() {
       if (b.type !== 'hero' && b.type !== 'heroh') b.type = 'hero';
       b.heroPhoto = el.dataset.heroImg;
       renderAll();
+      commit();
     });
   });
 
@@ -1776,6 +1791,7 @@ function bindSidebarHandlers() {
       const b = getSelectedBlock(); if (!b) return;
       b.type = el.dataset.heroOrient;
       renderAll();
+      commit();
     });
   });
 
@@ -1788,6 +1804,7 @@ function bindSidebarHandlers() {
       const b = getSelectedBlock(); if (!b) return;
       b.align = el.dataset.align;
       renderAll();
+      commit();
     });
   });
 
@@ -1796,6 +1813,7 @@ function bindSidebarHandlers() {
       const b = getSelectedBlock(); if (!b) return;
       b.position = el.dataset.pos;
       renderAll();
+      commit();
     });
   });
 
@@ -1831,7 +1849,12 @@ function bindSidebarHandlers() {
         b.rspan = half;
         state.variants[state.selected.variant].push(nb);
       }
-      renderAll();
+      if (a !== 'deselect') {
+        renderAll();
+        commit();
+      } else {
+        renderAll();
+      }
     });
   });
 }
@@ -2126,6 +2149,7 @@ function renderShelf() {
       e.stopPropagation();
       state.variants[v] = state.variants[v].filter(z => z.id !== b.id);
       renderAll();
+      commit();
     });
     item.appendChild(x);
 
@@ -2133,6 +2157,7 @@ function renderShelf() {
     item.addEventListener('click', () => {
       restoreBlock(b.id, v);
       renderAll();
+      commit();
     });
 
     shelf.appendChild(item);
@@ -2213,6 +2238,7 @@ function startBlockInteraction(e, b, variantId) {
     } else {
       state.selected = { variant: drag.variantId, blockId: drag.blockId };
       renderAll();
+      commit();
     }
   };
 
@@ -2252,6 +2278,7 @@ function startBlockResize(e, b, variantId) {
     document.body.classList.remove('dragging-block');
     state.selected = { variant: drag.variantId, blockId: drag.blockId };
     renderAll();
+    commit();
   };
 
   document.addEventListener('pointermove', onMove);
@@ -2290,10 +2317,93 @@ document.getElementById('hidden-upload').addEventListener('change', (e) => {
     }
     pendingUpload = null;
     renderAll();
+    commit();
     showToast('Картинка загружена');
   };
   reader.readAsDataURL(file);
 });
+
+/* ════════════════════════════════════════════════════════════════
+   HISTORY (undo / redo) + COMMIT
+   ════════════════════════════════════════════════════════════════ */
+
+const HISTORY_CAP = 60;
+let history = [];
+let historyIdx = -1;
+
+function snapshot() {
+  return JSON.parse(JSON.stringify({
+    global: state.global,
+    variants: state.variants,
+    variantOrder: state.variantOrder,
+    variantNames: state.variantNames,
+    active: state.active,
+    nextBlockId,
+    nextVariantId,
+  }));
+}
+
+function pushHistory() {
+  history = history.slice(0, historyIdx + 1);
+  history.push(snapshot());
+  historyIdx = history.length - 1;
+  if (history.length > HISTORY_CAP) {
+    history.shift();
+    historyIdx--;
+  }
+  updateHistoryButtons();
+}
+
+function applySnapshot(snap) {
+  state.global = JSON.parse(JSON.stringify(snap.global));
+  state.variants = JSON.parse(JSON.stringify(snap.variants));
+  state.variantOrder = [...snap.variantOrder];
+  state.variantNames = { ...snap.variantNames };
+  state.active = snap.active;
+  state.selected = null;
+  nextBlockId = snap.nextBlockId;
+  nextVariantId = snap.nextVariantId;
+  syncVariants();
+  document.querySelectorAll('#stage-wrap .slide').forEach(s => {
+    const sid = s.id.replace('slide-', '');
+    if (!state.variantOrder.includes(sid)) s.remove();
+  });
+  ensureSlides();
+  ensureCompareArtboards();
+  if (state.active === 'compare' || !state.variantOrder.includes(state.active)) {
+    state.active = state.variantOrder[0];
+  }
+  exitCompare();
+  renderAll();
+  renderTabs();
+  updateHistoryButtons();
+}
+
+function undo() {
+  if (historyIdx <= 0) return;
+  historyIdx--;
+  applySnapshot(history[historyIdx]);
+}
+
+function redo() {
+  if (historyIdx >= history.length - 1) return;
+  historyIdx++;
+  applySnapshot(history[historyIdx]);
+}
+
+function updateHistoryButtons() {
+  const u = document.getElementById('btn-undo');
+  const r = document.getElementById('btn-redo');
+  if (u) u.disabled = historyIdx <= 0;
+  if (r) r.disabled = historyIdx >= history.length - 1;
+}
+
+// commit() = push current state to history (and later, persist).
+// Call after any state-mutating action that should be Ctrl+Z'able.
+function commit() {
+  pushHistory();
+  if (typeof scheduleSave === 'function') scheduleSave();
+}
 
 /* ════════════════════════════════════════════════════════════════
    VARIANT MANAGEMENT (dynamic tabs/slides + CRUD)
@@ -2402,6 +2512,7 @@ function addVariant(name, blocks) {
   state.selected = null;
   renderAll();
   renderTabs();
+  commit();
 }
 
 function deleteVariant(id) {
@@ -2422,6 +2533,7 @@ function deleteVariant(id) {
   ensureCompareArtboards();
   renderAll();
   renderTabs();
+  commit();
 }
 
 function renameVariantPrompt(id) {
@@ -2435,6 +2547,7 @@ function renameVariantPrompt(id) {
   ensureCompareArtboards();
   renderAll();
   renderTabs();
+  commit();
 }
 
 function duplicateVariant(id) {
@@ -2452,6 +2565,7 @@ function duplicateVariant(id) {
   state.selected = null;
   renderAll();
   renderTabs();
+  commit();
 }
 
 function exportVariantAsJson(id) {
@@ -2718,7 +2832,21 @@ focusOverlay.querySelector('.focus-arrow.right').addEventListener('click', (e) =
 
 // Tab clicks are wired in renderTabs(); keyboard nav handled here.
 
+document.getElementById('btn-undo').addEventListener('click', undo);
+document.getElementById('btn-redo').addEventListener('click', redo);
+
 document.addEventListener('keydown', (e) => {
+  // Undo/redo work even from within inputs (matches OS-wide convention,
+  // browsers may handle these natively; we still preventDefault so our
+  // history wins instead of the input's built-in undo)
+  const meta = e.ctrlKey || e.metaKey;
+  if (meta && !e.shiftKey && e.key.toLowerCase() === 'z') {
+    e.preventDefault(); undo(); return;
+  }
+  if (meta && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+    e.preventDefault(); redo(); return;
+  }
+
   if (document.activeElement && (
     document.activeElement.tagName === 'INPUT' ||
     document.activeElement.tagName === 'TEXTAREA' ||
@@ -2775,6 +2903,7 @@ window.addEventListener('resize', fit);
 document.getElementById('btn-newblock').addEventListener('click', () => {
   createNewBlock();
   renderAll();
+  commit();
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
@@ -2783,12 +2912,14 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   nextVariantId = 4;
   state = initialState();
   syncVariants();
-  // Remove all slide DOMs (ensureSlides will recreate)
   document.querySelectorAll('#stage-wrap .slide').forEach(s => s.remove());
   ensureSlides();
   ensureCompareArtboards();
+  history = [];
+  historyIdx = -1;
   renderAll();
   renderTabs();
+  pushHistory();
   showToast('Сброшено');
 });
 
@@ -2898,6 +3029,7 @@ ensureCompareArtboards();
 renderTabs();
 setupCompareCanvas();
 renderAll();
+pushHistory();
 fit();
 if (document.fonts) document.fonts.ready.then(fit);
 </script>
