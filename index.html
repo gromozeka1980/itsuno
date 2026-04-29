@@ -84,6 +84,43 @@
   }
   .tab:hover { color: var(--ink); }
   .tab.active { background: var(--ink); color: #fff; }
+  .tab--add {
+    width: 28px;
+    padding: 6px 0;
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--ink-mute);
+  }
+  .tab--add:hover { color: var(--ink); background: rgba(0,0,0,0.04); }
+
+  /* Right-click context menu for variant tabs */
+  #variant-menu {
+    position: fixed;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.15);
+    padding: 4px;
+    z-index: 300;
+    min-width: 180px;
+    font-size: 13px;
+  }
+  #variant-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+    border-radius: 5px;
+  }
+  #variant-menu button:hover { background: rgba(0, 0, 0, 0.05); }
+  #variant-menu button.danger { color: #d92d20; }
+  #variant-menu button.danger:hover { background: rgba(217, 45, 32, 0.06); }
 
   .topnav-btn {
     padding: 7px 14px;
@@ -921,13 +958,9 @@
 <div class="topnav">
   <div class="topnav-title">Бенто-редактор<small>Валерий Рыжов · 1920×1080</small></div>
   <div class="topnav-spacer"></div>
-  <div class="tabs">
-    <button class="tab active" data-tab="v1">V1 — Classic</button>
-    <button class="tab" data-tab="v2">V2 — Manifest First</button>
-    <button class="tab" data-tab="v3">V3 — Portfolio Heavy</button>
-    <button class="tab" data-tab="compare">Сравнить</button>
-  </div>
+  <div class="tabs" id="tabs"></div>
   <button class="topnav-btn" id="btn-newblock">+ Блок</button>
+  <button class="topnav-btn" id="btn-import">Импорт</button>
   <button class="topnav-btn" id="btn-reset">Сбросить</button>
   <button class="topnav-btn topnav-btn--primary" id="btn-export">Экспорт HTML</button>
 </div>
@@ -935,28 +968,12 @@
 <div class="layout">
   <aside class="sidebar" id="sidebar"></aside>
   <div class="stage-wrap" id="stage-wrap">
-    <div class="slide active" id="slide-v1"><div class="grid" id="grid-v1"></div></div>
-    <div class="slide" id="slide-v2"><div class="grid" id="grid-v2"></div></div>
-    <div class="slide" id="slide-v3"><div class="grid" id="grid-v3"></div></div>
     <div id="shelf"><span class="shelf-tag">Хранилище</span></div>
   </div>
   <div id="compare-root">
     <div class="cmp-grid-bg"></div>
     <div class="cmp-canvas">
-      <div class="cmp-row">
-        <div class="cmp-artboard" data-variant="v1">
-          <div class="cmp-label">V1 — Classic</div>
-          <div class="cmp-stage"><div class="grid"></div></div>
-        </div>
-        <div class="cmp-artboard" data-variant="v2">
-          <div class="cmp-label">V2 — Manifest First</div>
-          <div class="cmp-stage"><div class="grid"></div></div>
-        </div>
-        <div class="cmp-artboard" data-variant="v3">
-          <div class="cmp-label">V3 — Portfolio Heavy</div>
-          <div class="cmp-stage"><div class="grid"></div></div>
-        </div>
-      </div>
+      <div class="cmp-row"></div>
     </div>
   </div>
 </div>
@@ -1010,11 +1027,12 @@ const IMAGES = {
 
 const FONTS = ['IBM Plex Sans', 'IBM Plex Mono', 'Inter', 'Manrope'];
 
-const VARIANTS = [
-  { id: 'v1', name: 'V1 — Classic' },
-  { id: 'v2', name: 'V2 — Manifest First' },
-  { id: 'v3', name: 'V3 — Portfolio Heavy' },
-];
+// Mutable: re-synced from state.variantOrder + state.variantNames whenever variants change
+let VARIANTS = [];
+function syncVariants() {
+  VARIANTS.length = 0;
+  state.variantOrder.forEach(id => VARIANTS.push({ id, name: state.variantNames[id] }));
+}
 
 const encUrl = (s) => encodeURI(s).replace(/'/g, "%27");
 
@@ -1053,6 +1071,9 @@ const blockDefaults = (overrides = {}) => ({
 
 let nextBlockId = 0;
 const newId = () => `b${++nextBlockId}`;
+
+let nextVariantId = 4;
+const newVariantId = () => `v${nextVariantId++}`;
 
 function makeVariant1() {
   const b = [];
@@ -1214,6 +1235,12 @@ const initialState = () => ({
     v1: makeVariant1(),
     v2: makeVariant2(),
     v3: makeVariant3(),
+  },
+  variantOrder: ['v1', 'v2', 'v3'],
+  variantNames: {
+    v1: 'V1 — Classic',
+    v2: 'V2 — Manifest First',
+    v3: 'V3 — Portfolio Heavy',
   },
   active: 'v1',
   selected: null,
@@ -2269,6 +2296,225 @@ document.getElementById('hidden-upload').addEventListener('change', (e) => {
 });
 
 /* ════════════════════════════════════════════════════════════════
+   VARIANT MANAGEMENT (dynamic tabs/slides + CRUD)
+   ════════════════════════════════════════════════════════════════ */
+
+function ensureSlides() {
+  const sw = document.getElementById('stage-wrap');
+  const shelf = document.getElementById('shelf');
+  for (const v of VARIANTS) {
+    const id = `slide-${v.id}`;
+    if (!document.getElementById(id)) {
+      const slide = document.createElement('div');
+      slide.className = 'slide';
+      slide.id = id;
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.id = `grid-${v.id}`;
+      slide.appendChild(grid);
+      sw.insertBefore(slide, shelf);
+    }
+  }
+  sw.querySelectorAll('.slide').forEach(s => {
+    const sid = s.id.replace('slide-', '');
+    if (!state.variantOrder.includes(sid)) s.remove();
+  });
+}
+
+function ensureCompareArtboards() {
+  const row = document.querySelector('#compare-root .cmp-row');
+  if (!row) return;
+  row.innerHTML = '';
+  for (const v of VARIANTS) {
+    const ab = document.createElement('div');
+    ab.className = 'cmp-artboard';
+    ab.dataset.variant = v.id;
+    const lbl = document.createElement('div');
+    lbl.className = 'cmp-label';
+    lbl.textContent = v.name;
+    ab.appendChild(lbl);
+    const stage = document.createElement('div');
+    stage.className = 'cmp-stage';
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    stage.appendChild(grid);
+    ab.appendChild(stage);
+    row.appendChild(ab);
+  }
+}
+
+function renderTabs() {
+  const tabsEl = document.getElementById('tabs');
+  if (!tabsEl) return;
+  tabsEl.innerHTML = '';
+  const cmpActive = document.getElementById('compare-root')?.classList.contains('active');
+  for (const v of VARIANTS) {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (!cmpActive && state.active === v.id ? ' active' : '');
+    btn.dataset.tab = v.id;
+    btn.textContent = v.name;
+    btn.title = 'ПКМ — переименовать / дублировать / экспорт / удалить';
+    btn.addEventListener('click', () => switchTab(v.id));
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openVariantMenu(v.id, e.clientX, e.clientY);
+    });
+    tabsEl.appendChild(btn);
+  }
+  const add = document.createElement('button');
+  add.className = 'tab tab--add';
+  add.title = 'Новый вариант';
+  add.textContent = '+';
+  add.addEventListener('click', () => addVariant());
+  tabsEl.appendChild(add);
+  const cmp = document.createElement('button');
+  cmp.className = 'tab' + (cmpActive ? ' active' : '');
+  cmp.dataset.tab = 'compare';
+  cmp.textContent = 'Сравнить';
+  cmp.addEventListener('click', () => switchTab('compare'));
+  tabsEl.appendChild(cmp);
+}
+
+function switchTab(tab) {
+  if (tab === 'compare') {
+    state.selected = null;
+    enterCompare();
+  } else {
+    if (!state.variantOrder.includes(tab)) return;
+    exitCompare();
+    state.active = tab;
+    state.selected = null;
+    renderAll();
+  }
+  renderTabs();
+}
+
+function addVariant(name, blocks) {
+  const id = newVariantId();
+  state.variants[id] = blocks ? blocks.map(b => ({ ...b, id: `b${++nextBlockId}` })) : [];
+  state.variantOrder.push(id);
+  state.variantNames[id] = name || `V${state.variantOrder.length} — Новый`;
+  syncVariants();
+  ensureSlides();
+  ensureCompareArtboards();
+  exitCompare();
+  state.active = id;
+  state.selected = null;
+  renderAll();
+  renderTabs();
+}
+
+function deleteVariant(id) {
+  if (!state.variantOrder.includes(id)) return;
+  if (state.variantOrder.length <= 1) {
+    showToast('Должен остаться хотя бы один вариант');
+    return;
+  }
+  if (!confirm(`Удалить вариант «${state.variantNames[id]}»?`)) return;
+  state.variantOrder = state.variantOrder.filter(x => x !== id);
+  delete state.variants[id];
+  delete state.variantNames[id];
+  const slide = document.getElementById(`slide-${id}`);
+  if (slide) slide.remove();
+  if (state.active === id) state.active = state.variantOrder[0];
+  state.selected = null;
+  syncVariants();
+  ensureCompareArtboards();
+  renderAll();
+  renderTabs();
+}
+
+function renameVariantPrompt(id) {
+  const current = state.variantNames[id];
+  const next = prompt('Имя варианта', current);
+  if (next === null) return;
+  const trimmed = next.trim();
+  if (!trimmed || trimmed === current) return;
+  state.variantNames[id] = trimmed;
+  syncVariants();
+  ensureCompareArtboards();
+  renderAll();
+  renderTabs();
+}
+
+function duplicateVariant(id) {
+  if (!state.variantOrder.includes(id)) return;
+  const dupId = newVariantId();
+  state.variants[dupId] = state.variants[id].map(b => ({ ...b, id: `b${++nextBlockId}` }));
+  const idx = state.variantOrder.indexOf(id);
+  state.variantOrder.splice(idx + 1, 0, dupId);
+  state.variantNames[dupId] = state.variantNames[id] + ' (копия)';
+  syncVariants();
+  ensureSlides();
+  ensureCompareArtboards();
+  exitCompare();
+  state.active = dupId;
+  state.selected = null;
+  renderAll();
+  renderTabs();
+}
+
+function exportVariantAsJson(id) {
+  if (!state.variantOrder.includes(id)) return;
+  const data = {
+    schema: 'itsuno-bento-variant-v1',
+    name: state.variantNames[id],
+    blocks: state.variants[id],
+    global: state.global,
+  };
+  const safeName = state.variantNames[id]
+    .replace(/[^a-zA-Z0-9 _\-—]/g, '')
+    .replace(/\s+/g, '-')
+    .toLowerCase() || id;
+  downloadFile(`bento-${safeName}.json`, JSON.stringify(data, null, 2));
+  showToast(`Сохранён JSON: ${safeName}`);
+}
+
+function importVariantFromJson(jsonText) {
+  let data;
+  try { data = JSON.parse(jsonText); }
+  catch (e) { showToast('Не удалось распарсить JSON'); return; }
+  if (!data || !Array.isArray(data.blocks)) {
+    showToast('В файле нет поля «blocks»');
+    return;
+  }
+  addVariant(data.name, data.blocks);
+  showToast('Импортировано');
+}
+
+function openVariantMenu(id, x, y) {
+  closeVariantMenu();
+  const menu = document.createElement('div');
+  menu.id = 'variant-menu';
+  menu.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+  menu.style.top = (y + 4) + 'px';
+  menu.innerHTML = `
+    <button data-action="rename">Переименовать</button>
+    <button data-action="duplicate">Дублировать</button>
+    <button data-action="export">Экспортировать JSON</button>
+    <button class="danger" data-action="delete">Удалить</button>
+  `;
+  menu.addEventListener('click', (e) => {
+    const action = e.target.dataset && e.target.dataset.action;
+    if (!action) return;
+    closeVariantMenu();
+    if (action === 'rename')    renameVariantPrompt(id);
+    if (action === 'duplicate') duplicateVariant(id);
+    if (action === 'export')    exportVariantAsJson(id);
+    if (action === 'delete')    deleteVariant(id);
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    document.addEventListener('pointerdown', closeVariantMenu, { once: true, capture: true });
+  }, 0);
+}
+
+function closeVariantMenu() {
+  const m = document.getElementById('variant-menu');
+  if (m) m.remove();
+}
+
+/* ════════════════════════════════════════════════════════════════
    COMPARE MODE
    ════════════════════════════════════════════════════════════════ */
 
@@ -2283,9 +2529,11 @@ function applyCmpTf() {
 }
 
 function refreshCompare() {
+  ensureCompareArtboards();
   const g = state.global;
   VARIANTS.forEach(v => {
     const ab = cmpRoot.querySelector(`.cmp-artboard[data-variant="${v.id}"]`);
+    if (!ab) return;
     const grid = ab.querySelector('.grid');
     grid.innerHTML = '';
     grid.style.gap = `${g.gridGap}px`;
@@ -2296,7 +2544,8 @@ function refreshCompare() {
 }
 
 function fitCompareInitial() {
-  const totalW = 1920 * 3 + 100 * 2 + 80 * 2;
+  const n = Math.max(1, VARIANTS.length);
+  const totalW = 1920 * n + 100 * (n - 1) + 80 * 2;
   const totalH = 1080 + 18 + 16 + 80 * 2;
   const w = cmpRoot.clientWidth;
   const h = cmpRoot.clientHeight;
@@ -2467,22 +2716,7 @@ focusOverlay.querySelector('.focus-arrow.right').addEventListener('click', (e) =
    TAB SWITCHING + KEYBOARD
    ════════════════════════════════════════════════════════════════ */
 
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    const tab = t.dataset.tab;
-    if (tab === 'compare') {
-      state.selected = null;
-      enterCompare();
-    } else {
-      exitCompare();
-      state.active = tab;
-      state.selected = null;
-      renderAll();
-    }
-  });
-});
+// Tab clicks are wired in renderTabs(); keyboard nav handled here.
 
 document.addEventListener('keydown', (e) => {
   if (document.activeElement && (
@@ -2497,13 +2731,20 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.key === '1') document.querySelector('[data-tab="v1"]').click();
-  if (e.key === '2') document.querySelector('[data-tab="v2"]').click();
-  if (e.key === '3') document.querySelector('[data-tab="v3"]').click();
-  if (e.key === '4') document.querySelector('[data-tab="compare"]').click();
+  // Digits 1–9 → variant by index in current order; 0 → Сравнить
+  if (/^[1-9]$/.test(e.key)) {
+    const idx = parseInt(e.key, 10) - 1;
+    if (idx < state.variantOrder.length) {
+      e.preventDefault();
+      switchTab(state.variantOrder[idx]);
+    }
+    return;
+  }
+  if (e.key === '0') { e.preventDefault(); switchTab('compare'); return; }
+
   if (e.key === 'Escape') {
     if (cmpRoot.classList.contains('active')) {
-      document.querySelector('[data-tab="v1"]').click();
+      switchTab(state.variantOrder[0]);
     } else {
       deselect();
     }
@@ -2539,9 +2780,30 @@ document.getElementById('btn-newblock').addEventListener('click', () => {
 document.getElementById('btn-reset').addEventListener('click', () => {
   if (!confirm('Сбросить все изменения и вернуться к исходным трём вариантам?')) return;
   nextBlockId = 0;
+  nextVariantId = 4;
   state = initialState();
+  syncVariants();
+  // Remove all slide DOMs (ensureSlides will recreate)
+  document.querySelectorAll('#stage-wrap .slide').forEach(s => s.remove());
+  ensureSlides();
+  ensureCompareArtboards();
   renderAll();
+  renderTabs();
   showToast('Сброшено');
+});
+
+document.getElementById('btn-import').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importVariantFromJson(String(reader.result || ''));
+    reader.readAsText(file);
+  });
+  input.click();
 });
 
 document.getElementById('btn-export').addEventListener('click', () => {
@@ -2630,6 +2892,10 @@ function showToast(msg) {
    INIT
    ════════════════════════════════════════════════════════════════ */
 
+syncVariants();
+ensureSlides();
+ensureCompareArtboards();
+renderTabs();
 setupCompareCanvas();
 renderAll();
 fit();
