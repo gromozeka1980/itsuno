@@ -287,6 +287,24 @@
   }
   .sb-imgswatch:hover { transform: scale(1.04); }
   .sb-imgswatch.selected { border-color: var(--ink); }
+  .sb-imgswatch--upload {
+    background: var(--sb-section);
+    border: 2px dashed rgba(0, 0, 0, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-mute);
+    font-size: 22px;
+    font-weight: 300;
+    line-height: 1;
+  }
+  .sb-imgswatch--upload:hover {
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+
+  .sb-tabs--4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
 
   .sb-sizerow {
     display: grid;
@@ -525,7 +543,6 @@
   .blk--hero { padding: 0; }
   .blk--hero .hero-photo {
     flex: 1;
-    background-image: url('Val-photo.jpg');
     background-size: cover;
     background-position: center 22%;
     -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
@@ -540,7 +557,6 @@
   .blk--heroh { padding: 0; flex-direction: row; }
   .blk--heroh .hero-photo {
     width: 48%;
-    background-image: url('Val-photo.jpg');
     background-size: cover;
     background-position: center 22%;
     -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
@@ -830,6 +846,8 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<input type="file" id="hidden-upload" accept="image/*" style="display:none">
+
 
 <script>
 /* ════════════════════════════════════════════════════════════════
@@ -847,6 +865,7 @@ const GRADIENTS = {
 };
 
 const IMAGES = {
+  valPortrait: { name: 'Валерий · портрет',   file: 'Val-photo.jpg' },
   banking:  { name: 'R-Bank · Dashboard',     file: 'My-projects-R-bank-employee-dashboard-20239.jpg' },
   bbtCover: { name: 'BBT Travel · Forum',     file: '1.jpg' },
   bbtProg:  { name: 'IMG Show · Programme',   file: '6.jpg' },
@@ -881,6 +900,7 @@ const blockDefaults = (overrides = {}) => ({
   gradAngle: 135,
   image: null,
   imageLabel: '',
+  heroPhoto: 'valPortrait',
   col: 1, row: 1, cspan: 4, rspan: 4,
   title: '',
   subtitle: '',
@@ -1156,6 +1176,10 @@ function renderBlock(b, variantId) {
   } else if (isHero) {
     const photo = document.createElement('div');
     photo.className = 'hero-photo';
+    const heroKey = b.heroPhoto || 'valPortrait';
+    if (IMAGES[heroKey]) {
+      photo.style.backgroundImage = `url('${encUrl(IMAGES[heroKey].file)}')`;
+    }
     div.appendChild(photo);
     if (b.title || b.subtitle) {
       const text = document.createElement('div');
@@ -1167,6 +1191,10 @@ function renderBlock(b, variantId) {
   } else if (isHeroH) {
     const photo = document.createElement('div');
     photo.className = 'hero-photo';
+    const heroKey = b.heroPhoto || 'valPortrait';
+    if (IMAGES[heroKey]) {
+      photo.style.backgroundImage = `url('${encUrl(IMAGES[heroKey].file)}')`;
+    }
     div.appendChild(photo);
     if (b.title || b.subtitle) {
       const text = document.createElement('div');
@@ -1291,9 +1319,21 @@ function section(title, innerHtml, hint = '') {
   return s;
 }
 
+function buildImagePicker(targetAttr, selectedKey) {
+  let html = '<div class="sb-imggrid">';
+  Object.entries(IMAGES).forEach(([k, v]) => {
+    const sel = selectedKey === k ? ' selected' : '';
+    html += `<div class="sb-imgswatch${sel}" style="background-image:url('${encUrl(v.file)}');" data-${targetAttr}="${k}" title="${v.name}"></div>`;
+  });
+  html += `<div class="sb-imgswatch sb-imgswatch--upload" data-upload="${targetAttr}" title="Загрузить картинку">+</div>`;
+  html += '</div>';
+  return html;
+}
+
 function blockSection(b) {
   const isImage = b.type === 'image';
   const isGrad  = b.type === 'gradient';
+  const isHero  = b.type === 'hero' || b.type === 'heroh';
 
   let gradHtml = '<div class="sb-grid">';
   Object.entries(GRADIENTS).forEach(([k, v]) => {
@@ -1310,12 +1350,7 @@ function blockSection(b) {
     `;
   }
 
-  let imgHtml = '<div class="sb-imggrid">';
-  Object.entries(IMAGES).forEach(([k, v]) => {
-    const sel = isImage && b.image === k ? ' selected' : '';
-    imgHtml += `<div class="sb-imgswatch${sel}" style="background-image:url('${encUrl(v.file)}');" data-img="${k}" title="${v.name}"></div>`;
-  });
-  imgHtml += '</div>';
+  let imgHtml = isImage ? buildImagePicker('img', b.image) : '';
 
   let imageLabelHtml = '';
   if (isImage) {
@@ -1325,17 +1360,35 @@ function blockSection(b) {
     `;
   }
 
-  const tabActive = (t) => t === b.type ? 'active' : '';
+  let heroHtml = '';
+  if (isHero) {
+    heroHtml = `
+      <div class="sb-label" style="margin-bottom:4px;">Фото героя</div>
+      ${buildImagePicker('hero-img', b.heroPhoto || 'valPortrait')}
+      <div class="sb-label" style="margin-bottom:6px;">Ориентация</div>
+      <div class="sb-tabs">
+        <button class="sb-tab ${b.type === 'hero'  ? 'active' : ''}" data-hero-orient="hero">Вертикально ↕</button>
+        <button class="sb-tab ${b.type === 'heroh' ? 'active' : ''}" data-hero-orient="heroh">Горизонтально ↔</button>
+      </div>
+    `;
+  }
+
+  const tabActive = (t) => {
+    if (t === 'hero') return isHero ? 'active' : '';
+    return t === b.type ? 'active' : '';
+  };
 
   return section('Акцент', `
-    <div class="sb-tabs">
-      <button class="sb-tab ${tabActive('plain')}" data-type="plain">Обычный</button>
+    <div class="sb-tabs sb-tabs--4">
+      <button class="sb-tab ${tabActive('plain')}"    data-type="plain">Обычный</button>
       <button class="sb-tab ${tabActive('gradient')}" data-type="gradient">Градиент</button>
-      <button class="sb-tab ${tabActive('image')}" data-type="image">Картинка</button>
+      <button class="sb-tab ${tabActive('image')}"    data-type="image">Картинка</button>
+      <button class="sb-tab ${tabActive('hero')}"     data-type="hero">Hero</button>
     </div>
 
     ${isGrad ? gradHtml + angleHtml : ''}
     ${isImage ? imgHtml + imageLabelHtml : ''}
+    ${isHero ? heroHtml : ''}
 
     <div class="sb-h" style="margin-top:14px;">Размер и положение</div>
 
@@ -1499,10 +1552,20 @@ function bindSidebarHandlers() {
     el.addEventListener('click', () => {
       const b = getSelectedBlock(); if (!b) return;
       const t = el.dataset.type;
-      b.type = t;
-      if (t === 'plain')    { b.gradient = null; b.image = null; }
-      if (t === 'gradient' && !b.gradient) b.gradient = 'deepBlue';
-      if (t === 'image' && !b.image) b.image = 'banking';
+      if (t === 'plain') {
+        b.type = 'plain';
+        b.gradient = null; b.image = null;
+      } else if (t === 'gradient') {
+        b.type = 'gradient';
+        if (!b.gradient) b.gradient = 'deepBlue';
+      } else if (t === 'image') {
+        b.type = 'image';
+        if (!b.image) b.image = 'banking';
+      } else if (t === 'hero') {
+        if (b.type !== 'hero' && b.type !== 'heroh') b.type = 'hero';
+        if (!b.heroPhoto) b.heroPhoto = 'valPortrait';
+        b.gradient = null; b.image = null;
+      }
       renderAll();
     });
   });
@@ -1524,6 +1587,27 @@ function bindSidebarHandlers() {
       if (!b.imageLabel && IMAGES[b.image]) b.imageLabel = IMAGES[b.image].name;
       renderAll();
     });
+  });
+
+  document.querySelectorAll('[data-hero-img]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      if (b.type !== 'hero' && b.type !== 'heroh') b.type = 'hero';
+      b.heroPhoto = el.dataset.heroImg;
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-hero-orient]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.type = el.dataset.heroOrient;
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-upload]').forEach(el => {
+    el.addEventListener('click', () => triggerUpload(el.dataset.upload));
   });
 
   document.querySelectorAll('[data-align]').forEach(el => {
@@ -1636,6 +1720,43 @@ function deselect() {
 
 document.getElementById('stage-wrap').addEventListener('click', (e) => {
   if (!e.target.closest('.blk')) deselect();
+});
+
+/* ════════════════════════════════════════════════════════════════
+   IMAGE UPLOAD
+   ════════════════════════════════════════════════════════════════ */
+
+let uploadCounter = 0;
+let pendingUpload = null; // 'img' | 'hero-img'
+
+function triggerUpload(target) {
+  pendingUpload = target;
+  document.getElementById('hidden-upload').click();
+}
+
+document.getElementById('hidden-upload').addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const key = `upload_${++uploadCounter}`;
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    IMAGES[key] = { name: 'Загружено · ' + baseName, file: reader.result };
+    const b = getSelectedBlock();
+    if (b && pendingUpload === 'img') {
+      b.type = 'image';
+      b.image = key;
+      if (!b.imageLabel) b.imageLabel = baseName;
+    } else if (b && pendingUpload === 'hero-img') {
+      if (b.type !== 'hero' && b.type !== 'heroh') b.type = 'hero';
+      b.heroPhoto = key;
+    }
+    pendingUpload = null;
+    renderAll();
+    showToast('Картинка загружена');
+  };
+  reader.readAsDataURL(file);
 });
 
 /* ════════════════════════════════════════════════════════════════
@@ -1934,7 +2055,9 @@ function exportActiveVariant() {
     if (isImage) {
       if (b.imageLabel) inner = `<div class="img-label">${escapeHtml(b.imageLabel)}</div>`;
     } else if (isHero) {
-      inner = `<div class="hero-photo"></div>`;
+      const heroKey = b.heroPhoto || 'valPortrait';
+      const heroFile = IMAGES[heroKey] ? IMAGES[heroKey].file : 'Val-photo.jpg';
+      inner = `<div class="hero-photo" style="background-image:url('${encUrl(heroFile)}');"></div>`;
       if (b.title || b.subtitle) {
         inner += `<div class="hero-text" style="padding:0 ${b.padding}px ${b.padding}px;">`;
         if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
@@ -1942,7 +2065,9 @@ function exportActiveVariant() {
         inner += `</div>`;
       }
     } else if (isHeroH) {
-      inner = `<div class="hero-photo"></div>`;
+      const heroKey = b.heroPhoto || 'valPortrait';
+      const heroFile = IMAGES[heroKey] ? IMAGES[heroKey].file : 'Val-photo.jpg';
+      inner = `<div class="hero-photo" style="background-image:url('${encUrl(heroFile)}');"></div>`;
       if (b.title || b.subtitle) {
         inner += `<div class="hero-text" style="padding:${b.padding}px;">`;
         if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
@@ -1962,7 +2087,7 @@ function exportActiveVariant() {
     blocksHtml += `<div class="${cls.join(' ')}${heroClass}${heroHClass}" style="grid-column:${b.col}/span ${b.cspan};grid-row:${b.row}/span ${b.rspan};background:${bg};${extraStyle}border-radius:${g.radius}px;box-shadow:${shadow};${b.borderWidth?'border:'+b.borderWidth+'px solid '+b.borderColor+';':''}">${inner}</div>`;
   });
 
-  return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Бенто-слайд</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden}body{background:#e8e8eb;font-family:'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center}.stage{position:absolute;width:1920px;height:1080px;top:50%;left:50%;transform-origin:center;background:${g.pageBg};display:flex}.grid{display:grid;grid-template-columns:repeat(20,1fr);grid-template-rows:repeat(12,1fr);gap:${g.gridGap}px;padding:${g.gridGap+4}px;width:100%;height:100%;background:${g.pageBg}}.blk{display:flex;flex-direction:column;overflow:hidden;position:relative;-webkit-corner-shape:squircle;corner-shape:squircle}.blk--accent{color:rgba(255,255,255,.95)}.blk-inner{flex:1;display:flex;flex-direction:column;overflow:hidden}.blk-title{font-weight:700;line-height:1;letter-spacing:-.025em;white-space:pre-wrap}.blk-sub{margin-top:8px;line-height:1.35;letter-spacing:.01em;white-space:pre-wrap}.blk--hero{padding:0}.blk--hero .hero-photo{flex:1;background-image:url('Val-photo.jpg');background-size:cover;background-position:center 22%;-webkit-mask-image:linear-gradient(to bottom,black 65%,transparent 100%);mask-image:linear-gradient(to bottom,black 65%,transparent 100%)}.blk--hero .hero-text{margin-top:-36px;z-index:2;position:relative}.blk--heroh{padding:0;flex-direction:row}.blk--heroh .hero-photo{width:48%;background-image:url('Val-photo.jpg');background-size:cover;background-position:center 22%;-webkit-mask-image:linear-gradient(to right,black 75%,transparent 100%);mask-image:linear-gradient(to right,black 75%,transparent 100%)}.blk--heroh .hero-text{flex:1;display:flex;flex-direction:column;justify-content:center;margin-left:-28px;z-index:2}.img-label{position:absolute;bottom:16px;left:16px;right:16px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:9px 14px;border-radius:100px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;color:#1E1C1A;text-align:center;z-index:5}</style></head><body><div class="stage" id="s"><div class="grid">${blocksHtml}</div></div><script>function fit(){var w=innerWidth,h=innerHeight,s=Math.min(w/1920,h/1080);document.getElementById('s').style.transform='translate(-50%,-50%) scale('+s+')'}fit();onresize=fit;<\/script></body></html>`;
+  return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Бенто-слайд</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden}body{background:#e8e8eb;font-family:'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center}.stage{position:absolute;width:1920px;height:1080px;top:50%;left:50%;transform-origin:center;background:${g.pageBg};display:flex}.grid{display:grid;grid-template-columns:repeat(20,1fr);grid-template-rows:repeat(12,1fr);gap:${g.gridGap}px;padding:${g.gridGap+4}px;width:100%;height:100%;background:${g.pageBg}}.blk{display:flex;flex-direction:column;overflow:hidden;position:relative;-webkit-corner-shape:squircle;corner-shape:squircle}.blk--accent{color:rgba(255,255,255,.95)}.blk-inner{flex:1;display:flex;flex-direction:column;overflow:hidden}.blk-title{font-weight:700;line-height:1;letter-spacing:-.025em;white-space:pre-wrap}.blk-sub{margin-top:8px;line-height:1.35;letter-spacing:.01em;white-space:pre-wrap}.blk--hero{padding:0}.blk--hero .hero-photo{flex:1;background-size:cover;background-position:center 22%;-webkit-mask-image:linear-gradient(to bottom,black 65%,transparent 100%);mask-image:linear-gradient(to bottom,black 65%,transparent 100%)}.blk--hero .hero-text{margin-top:-36px;z-index:2;position:relative}.blk--heroh{padding:0;flex-direction:row}.blk--heroh .hero-photo{width:48%;background-size:cover;background-position:center 22%;-webkit-mask-image:linear-gradient(to right,black 75%,transparent 100%);mask-image:linear-gradient(to right,black 75%,transparent 100%)}.blk--heroh .hero-text{flex:1;display:flex;flex-direction:column;justify-content:center;margin-left:-28px;z-index:2}.img-label{position:absolute;bottom:16px;left:16px;right:16px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:9px 14px;border-radius:100px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;color:#1E1C1A;text-align:center;z-index:5}</style></head><body><div class="stage" id="s"><div class="grid">${blocksHtml}</div></div><script>function fit(){var w=innerWidth,h=innerHeight,s=Math.min(w/1920,h/1080);document.getElementById('s').style.transform='translate(-50%,-50%) scale('+s+')'}fit();onresize=fit;<\/script></body></html>`;
 }
 
 function downloadFile(name, content) {
