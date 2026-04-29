@@ -527,6 +527,32 @@
     outline-offset: -3px;
   }
 
+  /* Resize handle (only on selected blocks) */
+  .blk-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 32px;
+    height: 32px;
+    cursor: nwse-resize;
+    z-index: 10;
+  }
+  .blk-resize-handle::after {
+    content: '';
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 12px;
+    height: 12px;
+    border-right: 2.5px solid #0961F2;
+    border-bottom: 2.5px solid #0961F2;
+    border-bottom-right-radius: 3px;
+    opacity: 0.95;
+  }
+
+  body.dragging-block { cursor: grabbing !important; }
+  body.dragging-block * { cursor: grabbing !important; }
+
   .blk-inner {
     flex: 1;
     display: flex;
@@ -800,6 +826,7 @@
     <button class="tab" data-tab="v3">V3 — Portfolio Heavy</button>
     <button class="tab" data-tab="compare">Сравнить</button>
   </div>
+  <button class="topnav-btn" id="btn-newblock">+ Блок</button>
   <button class="topnav-btn" id="btn-reset">Сбросить</button>
   <button class="topnav-btn topnav-btn--primary" id="btn-export">Экспорт HTML</button>
 </div>
@@ -1211,10 +1238,21 @@ function renderBlock(b, variantId) {
     div.appendChild(inner);
   }
 
-  div.addEventListener('click', (e) => {
-    e.stopPropagation();
-    selectBlock(variantId, b.id);
+  div.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.blk-resize-handle')) {
+      startBlockResize(e, b, variantId);
+    } else {
+      startBlockInteraction(e, b, variantId);
+    }
   });
+
+  if (sel) {
+    const handle = document.createElement('div');
+    handle.className = 'blk-resize-handle';
+    handle.title = 'Потяни за угол, чтобы изменить размер';
+    div.appendChild(handle);
+  }
 
   return div;
 }
@@ -1419,6 +1457,7 @@ function blockSection(b) {
 
     <button class="sb-btn" data-act="splitH" style="margin-top:8px;" ${b.cspan <= 1 ? 'disabled' : ''}>Делить ↔</button>
     <button class="sb-btn" data-act="splitV" ${b.rspan <= 1 ? 'disabled' : ''}>Делить ↕</button>
+    <button class="sb-btn" data-act="duplicate">Дублировать блок</button>
     <button class="sb-btn sb-btn--danger" data-act="delete">Удалить блок</button>
     <button class="sb-btn" data-act="deselect">Снять выделение</button>
   `);
@@ -1643,6 +1682,7 @@ function bindSidebarHandlers() {
         state.variants[v] = state.variants[v].filter(x => x.id !== b.id);
         state.selected = null;
       }
+      if (a === 'duplicate') duplicateBlock();
       if (a === 'deselect') state.selected = null;
       if (a === 'splitH' && b.cspan > 1) {
         const half = Math.floor(b.cspan / 2);
@@ -1721,6 +1761,174 @@ function deselect() {
 document.getElementById('stage-wrap').addEventListener('click', (e) => {
   if (!e.target.closest('.blk')) deselect();
 });
+
+/* ════════════════════════════════════════════════════════════════
+   BLOCK MANIPULATION (create / duplicate / drag-move / drag-resize)
+   ════════════════════════════════════════════════════════════════ */
+
+function cellsOccupied(blocks, col, row, cspan, rspan, excludeId) {
+  return blocks.some(b => {
+    if (b.id === excludeId) return false;
+    return !(col + cspan - 1 < b.col ||
+             col > b.col + b.cspan - 1 ||
+             row + rspan - 1 < b.row ||
+             row > b.row + b.rspan - 1);
+  });
+}
+
+function findFreeSpot(blocks, cspan, rspan, excludeId = null) {
+  for (let r = 1; r + rspan - 1 <= 12; r++) {
+    for (let c = 1; c + cspan - 1 <= 20; c++) {
+      if (!cellsOccupied(blocks, c, r, cspan, rspan, excludeId)) {
+        return { col: c, row: r };
+      }
+    }
+  }
+  return null;
+}
+
+function createNewBlock() {
+  const v = state.active;
+  const blocks = state.variants[v];
+  let spot = null, w = 4, h = 3;
+  for (const [tw, th] of [[6, 4], [5, 4], [4, 4], [4, 3], [3, 3], [3, 2], [2, 2], [1, 1]]) {
+    spot = findFreeSpot(blocks, tw, th);
+    if (spot) { w = tw; h = th; break; }
+  }
+  if (!spot) { showToast('Нет места для нового блока'); return; }
+  const nb = blockDefaults({
+    id: newId(),
+    col: spot.col, row: spot.row, cspan: w, rspan: h,
+    title: 'Заголовок', subtitle: 'Подпись',
+    titleSize: 24, subtitleSize: 13,
+    position: 'center-left', padding: 28,
+  });
+  blocks.push(nb);
+  state.selected = { variant: v, blockId: nb.id };
+}
+
+function duplicateBlock() {
+  if (!state.selected) return;
+  const v = state.selected.variant;
+  const orig = getSelectedBlock();
+  if (!orig) return;
+  const spot = findFreeSpot(state.variants[v], orig.cspan, orig.rspan);
+  if (!spot) { showToast('Нет места для дубликата'); return; }
+  const copy = { ...orig, id: newId(), col: spot.col, row: spot.row };
+  state.variants[v].push(copy);
+  state.selected = { variant: v, blockId: copy.id };
+  showToast('Блок дублирован');
+}
+
+function cellGeometry(variantId) {
+  const slide = document.getElementById(`slide-${variantId}`);
+  const slideRect = slide.getBoundingClientRect();
+  const scale = slideRect.width / 1920;
+  const G = state.global.gridGap;
+  const P = G + 4;
+  const cw = (1920 - 2 * P - 19 * G) / 20;
+  const ch = (1080 - 2 * P - 11 * G) / 12;
+  return { perW: cw + G, perH: ch + G, scale };
+}
+
+function updateBlockDom(b, variantId) {
+  const el = document.querySelector(`.blk[data-block-id="${b.id}"][data-variant="${variantId}"]`);
+  if (el) {
+    el.style.gridColumn = `${b.col} / span ${b.cspan}`;
+    el.style.gridRow = `${b.row} / span ${b.rspan}`;
+  }
+}
+
+function startBlockInteraction(e, b, variantId) {
+  const { perW, perH, scale } = cellGeometry(variantId);
+  const drag = {
+    blockId: b.id, variantId,
+    origCol: b.col, origRow: b.row,
+    cspan: b.cspan, rspan: b.rspan,
+    startX: e.clientX, startY: e.clientY,
+    perW, perH, scale,
+    moved: false,
+  };
+
+  const onMove = (ev) => {
+    const dx = ev.clientX - drag.startX;
+    const dy = ev.clientY - drag.startY;
+    if (!drag.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      drag.moved = true;
+      document.body.classList.add('dragging-block');
+    }
+    if (!drag.moved) return;
+    const dCol = Math.round(dx / drag.scale / drag.perW);
+    const dRow = Math.round(dy / drag.scale / drag.perH);
+    let newCol = drag.origCol + dCol;
+    let newRow = drag.origRow + dRow;
+    newCol = Math.max(1, Math.min(20 - drag.cspan + 1, newCol));
+    newRow = Math.max(1, Math.min(12 - drag.rspan + 1, newRow));
+    const blocks = state.variants[drag.variantId];
+    if (cellsOccupied(blocks, newCol, newRow, drag.cspan, drag.rspan, drag.blockId)) return;
+    const live = blocks.find(x => x.id === drag.blockId);
+    if (!live || (live.col === newCol && live.row === newRow)) return;
+    live.col = newCol;
+    live.row = newRow;
+    updateBlockDom(live, drag.variantId);
+  };
+
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.body.classList.remove('dragging-block');
+    if (!drag.moved) {
+      selectBlock(drag.variantId, drag.blockId);
+    } else {
+      state.selected = { variant: drag.variantId, blockId: drag.blockId };
+      renderAll();
+    }
+  };
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
+
+function startBlockResize(e, b, variantId) {
+  const { perW, perH, scale } = cellGeometry(variantId);
+  const drag = {
+    blockId: b.id, variantId,
+    col: b.col, row: b.row,
+    origCspan: b.cspan, origRspan: b.rspan,
+    startX: e.clientX, startY: e.clientY,
+    perW, perH, scale,
+  };
+  document.body.classList.add('dragging-block');
+
+  const onMove = (ev) => {
+    const dx = ev.clientX - drag.startX;
+    const dy = ev.clientY - drag.startY;
+    const dCol = Math.round(dx / drag.scale / drag.perW);
+    const dRow = Math.round(dy / drag.scale / drag.perH);
+    let newCspan = Math.max(1, drag.origCspan + dCol);
+    let newRspan = Math.max(1, drag.origRspan + dRow);
+    newCspan = Math.min(newCspan, 20 - drag.col + 1);
+    newRspan = Math.min(newRspan, 12 - drag.row + 1);
+    const blocks = state.variants[drag.variantId];
+    if (cellsOccupied(blocks, drag.col, drag.row, newCspan, newRspan, drag.blockId)) return;
+    const live = blocks.find(x => x.id === drag.blockId);
+    if (!live || (live.cspan === newCspan && live.rspan === newRspan)) return;
+    live.cspan = newCspan;
+    live.rspan = newRspan;
+    updateBlockDom(live, drag.variantId);
+  };
+
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.body.classList.remove('dragging-block');
+    state.selected = { variant: drag.variantId, blockId: drag.blockId };
+    renderAll();
+  };
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
 
 /* ════════════════════════════════════════════════════════════════
    IMAGE UPLOAD
@@ -1802,6 +2010,7 @@ function enterCompare() {
   stageWrap.classList.add('hidden');
   sidebar.classList.add('hidden');
   cmpRoot.classList.add('active');
+  document.getElementById('btn-newblock').style.visibility = 'hidden';
   refreshCompare();
   fitCompareInitial();
 }
@@ -1810,6 +2019,7 @@ function exitCompare() {
   cmpRoot.classList.remove('active');
   stageWrap.classList.remove('hidden');
   sidebar.classList.remove('hidden');
+  document.getElementById('btn-newblock').style.visibility = '';
 }
 
 function setupCompareCanvas() {
@@ -2016,6 +2226,11 @@ window.addEventListener('resize', fit);
 /* ════════════════════════════════════════════════════════════════
    EXPORT / RESET
    ════════════════════════════════════════════════════════════════ */
+
+document.getElementById('btn-newblock').addEventListener('click', () => {
+  createNewBlock();
+  renderAll();
+});
 
 document.getElementById('btn-reset').addEventListener('click', () => {
   if (!confirm('Сбросить все изменения и вернуться к исходным трём вариантам?')) return;
