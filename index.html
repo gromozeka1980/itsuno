@@ -3,565 +3,558 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Валерий Рыжов — Бенто-конструктор</title>
+<title>Валерий Рыжов — Бенто-редактор</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
-
-<!-- design-canvas.jsx inlined (CORS blocks XHR fetches under file://) -->
-<script type="text/babel" data-presets="react">
-// DesignCanvas.jsx — Figma-ish design canvas wrapper
-
-const DC = {
-  bg: '#f0eee9',
-  grid: 'rgba(0,0,0,0.06)',
-  label: 'rgba(60,50,40,0.7)',
-  title: 'rgba(40,30,20,0.85)',
-  subtitle: 'rgba(60,50,40,0.6)',
-  postitBg: '#fef4a8',
-  postitText: '#5a4a2a',
-  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
-};
-
-if (typeof document !== 'undefined' && !document.getElementById('dc-styles')) {
-  const s = document.createElement('style');
-  s.id = 'dc-styles';
-  s.textContent = [
-    '.dc-editable{cursor:text;outline:none;white-space:nowrap;border-radius:3px;padding:0 2px;margin:0 -2px}',
-    '.dc-editable:focus{background:#fff;box-shadow:0 0 0 1.5px #c96442}',
-    '[data-dc-slot]{transition:transform .18s cubic-bezier(.2,.7,.3,1)}',
-    '[data-dc-slot].dc-dragging{transition:none;z-index:10;pointer-events:none}',
-    '[data-dc-slot].dc-dragging .dc-card{box-shadow:0 12px 40px rgba(0,0,0,.25),0 0 0 2px #c96442;transform:scale(1.02)}',
-    '.dc-card{transition:box-shadow .15s,transform .15s}',
-    '.dc-card *{scrollbar-width:none}',
-    '.dc-card *::-webkit-scrollbar{display:none}',
-    '.dc-labelrow{display:flex;align-items:center;gap:4px;height:24px}',
-    '.dc-grip{cursor:grab;display:flex;align-items:center;padding:5px 4px;border-radius:4px;transition:background .12s}',
-    '.dc-grip:hover{background:rgba(0,0,0,.08)}',
-    '.dc-grip:active{cursor:grabbing}',
-    '.dc-labeltext{cursor:pointer;border-radius:4px;padding:3px 6px;display:flex;align-items:center;transition:background .12s}',
-    '.dc-labeltext:hover{background:rgba(0,0,0,.05)}',
-    '.dc-expand{position:absolute;bottom:100%;right:0;margin-bottom:5px;z-index:2;opacity:0;transition:opacity .12s,background .12s;',
-    '  width:22px;height:22px;border-radius:5px;border:none;cursor:pointer;padding:0;',
-    '  background:transparent;color:rgba(60,50,40,.7);display:flex;align-items:center;justify-content:center}',
-    '.dc-expand:hover{background:rgba(0,0,0,.06);color:#2a251f}',
-    '[data-dc-slot]:hover .dc-expand{opacity:1}',
-  ].join('\n');
-  document.head.appendChild(s);
-}
-
-const DCCtx = React.createContext(null);
-
-const DC_STATE_FILE = '.design-canvas.state.json';
-
-function DesignCanvas({ children, minScale, maxScale, style }) {
-  const [state, setState] = React.useState({ sections: {}, focus: null });
-  const [ready, setReady] = React.useState(false);
-  const didRead = React.useRef(false);
-  const skipNextWrite = React.useRef(false);
-
-  React.useEffect(() => {
-    let off = false;
-    fetch('./' + DC_STATE_FILE)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((saved) => {
-        if (off || !saved || !saved.sections) return;
-        skipNextWrite.current = true;
-        setState((s) => ({ ...s, sections: saved.sections }));
-      })
-      .catch(() => {})
-      .finally(() => { didRead.current = true; if (!off) setReady(true); });
-    const t = setTimeout(() => { if (!off) setReady(true); }, 150);
-    return () => { off = true; clearTimeout(t); };
-  }, []);
-
-  React.useEffect(() => {
-    if (!didRead.current) return;
-    if (skipNextWrite.current) { skipNextWrite.current = false; return; }
-    const t = setTimeout(() => {
-      window.omelette?.writeFile(DC_STATE_FILE, JSON.stringify({ sections: state.sections })).catch(() => {});
-    }, 250);
-    return () => clearTimeout(t);
-  }, [state.sections]);
-
-  const registry = {};
-  const sectionMeta = {};
-  const sectionOrder = [];
-  React.Children.forEach(children, (sec) => {
-    if (!sec || sec.type !== DCSection) return;
-    const sid = sec.props.id ?? sec.props.title;
-    if (!sid) return;
-    sectionOrder.push(sid);
-    const persisted = state.sections[sid] || {};
-    const srcIds = [];
-    React.Children.forEach(sec.props.children, (ab) => {
-      if (!ab || ab.type !== DCArtboard) return;
-      const aid = ab.props.id ?? ab.props.label;
-      if (!aid) return;
-      registry[`${sid}/${aid}`] = { sectionId: sid, artboard: ab };
-      srcIds.push(aid);
-    });
-    const kept = (persisted.order || []).filter((k) => srcIds.includes(k));
-    sectionMeta[sid] = {
-      title: persisted.title ?? sec.props.title,
-      subtitle: sec.props.subtitle,
-      slotIds: [...kept, ...srcIds.filter((k) => !kept.includes(k))],
-    };
-  });
-
-  const api = React.useMemo(() => ({
-    state,
-    section: (id) => state.sections[id] || {},
-    patchSection: (id, p) => setState((s) => ({
-      ...s,
-      sections: { ...s.sections, [id]: { ...s.sections[id], ...(typeof p === 'function' ? p(s.sections[id] || {}) : p) } },
-    })),
-    setFocus: (slotId) => setState((s) => ({ ...s, focus: slotId })),
-  }), [state]);
-
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') api.setFocus(null); };
-    const onPd = (e) => {
-      const ae = document.activeElement;
-      if (ae && ae.isContentEditable && !ae.contains(e.target)) ae.blur();
-    };
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('pointerdown', onPd, true);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onPd, true);
-    };
-  }, [api]);
-
-  return (
-    <DCCtx.Provider value={api}>
-      <DCViewport minScale={minScale} maxScale={maxScale} style={style}>{ready && children}</DCViewport>
-      {state.focus && registry[state.focus] && (
-        <DCFocusOverlay entry={registry[state.focus]} sectionMeta={sectionMeta} sectionOrder={sectionOrder} />
-      )}
-    </DCCtx.Provider>
-  );
-}
-
-function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
-  const vpRef = React.useRef(null);
-  const worldRef = React.useRef(null);
-  const tf = React.useRef({ x: 0, y: 0, scale: 1 });
-
-  const apply = React.useCallback(() => {
-    const { x, y, scale } = tf.current;
-    const el = worldRef.current;
-    if (el) el.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
-  }, []);
-
-  React.useEffect(() => {
-    const vp = vpRef.current;
-    if (!vp) return;
-
-    const zoomAt = (cx, cy, factor) => {
-      const r = vp.getBoundingClientRect();
-      const px = cx - r.left, py = cy - r.top;
-      const t = tf.current;
-      const next = Math.min(maxScale, Math.max(minScale, t.scale * factor));
-      const k = next / t.scale;
-      t.x = px - (px - t.x) * k;
-      t.y = py - (py - t.y) * k;
-      t.scale = next;
-      apply();
-    };
-
-    const isMouseWheel = (e) =>
-      e.deltaMode !== 0 ||
-      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
-
-    const onWheel = (e) => {
-      e.preventDefault();
-      if (isGesturing) return;
-      if (e.ctrlKey) {
-        zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
-      } else if (isMouseWheel(e)) {
-        zoomAt(e.clientX, e.clientY, Math.exp(-Math.sign(e.deltaY) * 0.18));
-      } else {
-        tf.current.x -= e.deltaX;
-        tf.current.y -= e.deltaY;
-        apply();
-      }
-    };
-
-    let gsBase = 1;
-    let isGesturing = false;
-    const onGestureStart = (e) => { e.preventDefault(); isGesturing = true; gsBase = tf.current.scale; };
-    const onGestureChange = (e) => {
-      e.preventDefault();
-      zoomAt(e.clientX, e.clientY, (gsBase * e.scale) / tf.current.scale);
-    };
-    const onGestureEnd = (e) => { e.preventDefault(); isGesturing = false; };
-
-    let drag = null;
-    const onPointerDown = (e) => {
-      const onBg = !e.target.closest('[data-dc-slot], .dc-editable');
-      if (!(e.button === 1 || (e.button === 0 && onBg))) return;
-      e.preventDefault();
-      vp.setPointerCapture(e.pointerId);
-      drag = { id: e.pointerId, lx: e.clientX, ly: e.clientY };
-      vp.style.cursor = 'grabbing';
-    };
-    const onPointerMove = (e) => {
-      if (!drag || e.pointerId !== drag.id) return;
-      tf.current.x += e.clientX - drag.lx;
-      tf.current.y += e.clientY - drag.ly;
-      drag.lx = e.clientX; drag.ly = e.clientY;
-      apply();
-    };
-    const onPointerUp = (e) => {
-      if (!drag || e.pointerId !== drag.id) return;
-      vp.releasePointerCapture(e.pointerId);
-      drag = null;
-      vp.style.cursor = '';
-    };
-
-    vp.addEventListener('wheel', onWheel, { passive: false });
-    vp.addEventListener('gesturestart', onGestureStart, { passive: false });
-    vp.addEventListener('gesturechange', onGestureChange, { passive: false });
-    vp.addEventListener('gestureend', onGestureEnd, { passive: false });
-    vp.addEventListener('pointerdown', onPointerDown);
-    vp.addEventListener('pointermove', onPointerMove);
-    vp.addEventListener('pointerup', onPointerUp);
-    vp.addEventListener('pointercancel', onPointerUp);
-    return () => {
-      vp.removeEventListener('wheel', onWheel);
-      vp.removeEventListener('gesturestart', onGestureStart);
-      vp.removeEventListener('gesturechange', onGestureChange);
-      vp.removeEventListener('gestureend', onGestureEnd);
-      vp.removeEventListener('pointerdown', onPointerDown);
-      vp.removeEventListener('pointermove', onPointerMove);
-      vp.removeEventListener('pointerup', onPointerUp);
-      vp.removeEventListener('pointercancel', onPointerUp);
-    };
-  }, [apply, minScale, maxScale]);
-
-  const gridSvg = `url("data:image/svg+xml,%3Csvg width='120' height='120' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M120 0H0v120' fill='none' stroke='${encodeURIComponent(DC.grid)}' stroke-width='1'/%3E%3C/svg%3E")`;
-  return (
-    <div
-      ref={vpRef}
-      className="design-canvas"
-      style={{
-        height: '100vh', width: '100vw',
-        background: DC.bg,
-        overflow: 'hidden',
-        overscrollBehavior: 'none',
-        touchAction: 'none',
-        position: 'relative',
-        fontFamily: DC.font,
-        boxSizing: 'border-box',
-        ...style,
-      }}
-    >
-      <div
-        ref={worldRef}
-        style={{
-          position: 'absolute', top: 0, left: 0,
-          transformOrigin: '0 0',
-          willChange: 'transform',
-          width: 'max-content', minWidth: '100%',
-          minHeight: '100%',
-          padding: '60px 0 80px',
-        }}
-      >
-        <div style={{ position: 'absolute', inset: -6000, backgroundImage: gridSvg, backgroundSize: '120px 120px', pointerEvents: 'none', zIndex: -1 }} />
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function DCSection({ id, title, subtitle, children, gap = 48 }) {
-  const ctx = React.useContext(DCCtx);
-  const sid = id ?? title;
-  const all = React.Children.toArray(children);
-  const artboards = all.filter((c) => c && c.type === DCArtboard);
-  const rest = all.filter((c) => !(c && c.type === DCArtboard));
-  const srcOrder = artboards.map((a) => a.props.id ?? a.props.label);
-  const sec = (ctx && sid && ctx.section(sid)) || {};
-
-  const order = React.useMemo(() => {
-    const kept = (sec.order || []).filter((k) => srcOrder.includes(k));
-    return [...kept, ...srcOrder.filter((k) => !kept.includes(k))];
-  }, [sec.order, srcOrder.join('|')]);
-
-  const byId = Object.fromEntries(artboards.map((a) => [a.props.id ?? a.props.label, a]));
-
-  return (
-    <div data-dc-section={sid} style={{ marginBottom: 80, position: 'relative' }}>
-      <div style={{ padding: '0 60px 56px' }}>
-        <DCEditable tag="div" value={sec.title ?? title}
-          onChange={(v) => ctx && sid && ctx.patchSection(sid, { title: v })}
-          style={{ fontSize: 28, fontWeight: 600, color: DC.title, letterSpacing: -0.4, marginBottom: 6, display: 'inline-block' }} />
-        {subtitle && <div style={{ fontSize: 16, color: DC.subtitle }}>{subtitle}</div>}
-      </div>
-      <div style={{ display: 'flex', gap, padding: '0 60px', alignItems: 'flex-start', width: 'max-content' }}>
-        {order.map((k) => (
-          <DCArtboardFrame key={k} sectionId={sid} artboard={byId[k]} order={order}
-            label={(sec.labels || {})[k] ?? byId[k].props.label}
-            onRename={(v) => ctx && ctx.patchSection(sid, (x) => ({ labels: { ...x.labels, [k]: v } }))}
-            onReorder={(next) => ctx && ctx.patchSection(sid, { order: next })}
-            onFocus={() => ctx && ctx.setFocus(`${sid}/${k}`)} />
-        ))}
-      </div>
-      {rest}
-    </div>
-  );
-}
-
-function DCArtboard() { return null; }
-
-function DCArtboardFrame({ sectionId, artboard, label, order, onRename, onReorder, onFocus }) {
-  const { id: rawId, label: rawLabel, width = 260, height = 480, children, style = {} } = artboard.props;
-  const id = rawId ?? rawLabel;
-  const ref = React.useRef(null);
-
-  const onGripDown = (e) => {
-    e.preventDefault(); e.stopPropagation();
-    const me = ref.current;
-    const scale = me.getBoundingClientRect().width / me.offsetWidth || 1;
-    const peers = Array.from(document.querySelectorAll(`[data-dc-section="${sectionId}"] [data-dc-slot]`));
-    const homes = peers.map((el) => ({ el, id: el.dataset.dcSlot, x: el.getBoundingClientRect().left }));
-    const slotXs = homes.map((h) => h.x);
-    const startIdx = order.indexOf(id);
-    const startX = e.clientX;
-    let liveOrder = order.slice();
-    me.classList.add('dc-dragging');
-
-    const layout = () => {
-      for (const h of homes) {
-        if (h.id === id) continue;
-        const slot = liveOrder.indexOf(h.id);
-        h.el.style.transform = `translateX(${(slotXs[slot] - h.x) / scale}px)`;
-      }
-    };
-
-    const move = (ev) => {
-      const dx = ev.clientX - startX;
-      me.style.transform = `translateX(${dx / scale}px)`;
-      const cur = homes[startIdx].x + dx;
-      let nearest = 0, best = Infinity;
-      for (let i = 0; i < slotXs.length; i++) {
-        const d = Math.abs(slotXs[i] - cur);
-        if (d < best) { best = d; nearest = i; }
-      }
-      if (liveOrder.indexOf(id) !== nearest) {
-        liveOrder = order.filter((k) => k !== id);
-        liveOrder.splice(nearest, 0, id);
-        layout();
-      }
-    };
-
-    const up = () => {
-      document.removeEventListener('pointermove', move);
-      document.removeEventListener('pointerup', up);
-      const finalSlot = liveOrder.indexOf(id);
-      me.classList.remove('dc-dragging');
-      me.style.transform = `translateX(${(slotXs[finalSlot] - homes[startIdx].x) / scale}px)`;
-      setTimeout(() => {
-        for (const h of homes) { h.el.style.transition = 'none'; h.el.style.transform = ''; }
-        if (liveOrder.join('|') !== order.join('|')) onReorder(liveOrder);
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          for (const h of homes) h.el.style.transition = '';
-        }));
-      }, 180);
-    };
-    document.addEventListener('pointermove', move);
-    document.addEventListener('pointerup', up);
-  };
-
-  return (
-    <div ref={ref} data-dc-slot={id} style={{ position: 'relative', flexShrink: 0 }}>
-      <div className="dc-labelrow" style={{ position: 'absolute', bottom: '100%', left: -4, marginBottom: 4, color: DC.label }}>
-        <div className="dc-grip" onPointerDown={onGripDown} title="Drag to reorder">
-          <svg width="9" height="13" viewBox="0 0 9 13" fill="currentColor"><circle cx="2" cy="2" r="1.1"/><circle cx="7" cy="2" r="1.1"/><circle cx="2" cy="6.5" r="1.1"/><circle cx="7" cy="6.5" r="1.1"/><circle cx="2" cy="11" r="1.1"/><circle cx="7" cy="11" r="1.1"/></svg>
-        </div>
-        <div className="dc-labeltext" onClick={onFocus} title="Click to focus">
-          <DCEditable value={label} onChange={onRename} onClick={(e) => e.stopPropagation()}
-            style={{ fontSize: 15, fontWeight: 500, color: DC.label, lineHeight: 1 }} />
-        </div>
-      </div>
-      <button className="dc-expand" onClick={onFocus} onPointerDown={(e) => e.stopPropagation()} title="Focus">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 1h4v4M5 11H1V7M11 1L7.5 4.5M1 11l3.5-3.5"/></svg>
-      </button>
-      <div className="dc-card"
-        style={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06)', overflow: 'hidden', width, height, background: '#fff', ...style }}>
-        {children || <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 13, fontFamily: DC.font }}>{id}</div>}
-      </div>
-    </div>
-  );
-}
-
-function DCEditable({ value, onChange, style, tag = 'span', onClick }) {
-  const T = tag;
-  return (
-    <T className="dc-editable" contentEditable suppressContentEditableWarning
-      onClick={onClick}
-      onPointerDown={(e) => e.stopPropagation()}
-      onBlur={(e) => onChange && onChange(e.currentTarget.textContent)}
-      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
-      style={style}>{value}</T>
-  );
-}
-
-function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
-  const ctx = React.useContext(DCCtx);
-  const { sectionId, artboard } = entry;
-  const sec = ctx.section(sectionId);
-  const meta = sectionMeta[sectionId];
-  const peers = meta.slotIds;
-  const aid = artboard.props.id ?? artboard.props.label;
-  const idx = peers.indexOf(aid);
-  const secIdx = sectionOrder.indexOf(sectionId);
-
-  const go = (d) => { const n = peers[(idx + d + peers.length) % peers.length]; if (n) ctx.setFocus(`${sectionId}/${n}`); };
-  const goSection = (d) => {
-    const ns = sectionOrder[(secIdx + d + sectionOrder.length) % sectionOrder.length];
-    const first = sectionMeta[ns] && sectionMeta[ns].slotIds[0];
-    if (first) ctx.setFocus(`${ns}/${first}`);
-  };
-
-  React.useEffect(() => {
-    const k = (e) => {
-      if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); goSection(-1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); goSection(1); }
-    };
-    document.addEventListener('keydown', k);
-    return () => document.removeEventListener('keydown', k);
-  });
-
-  const { width = 260, height = 480, children } = artboard.props;
-  const [vp, setVp] = React.useState({ w: window.innerWidth, h: window.innerHeight });
-  React.useEffect(() => { const r = () => setVp({ w: window.innerWidth, h: window.innerHeight }); window.addEventListener('resize', r); return () => window.removeEventListener('resize', r); }, []);
-  const scale = Math.max(0.1, Math.min((vp.w - 200) / width, (vp.h - 260) / height, 2));
-
-  const [ddOpen, setDd] = React.useState(false);
-  const Arrow = ({ dir, onClick }) => (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{ position: 'absolute', top: '50%', [dir]: 28, transform: 'translateY(-50%)',
-        border: 'none', background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.9)',
-        width: 44, height: 44, borderRadius: 22, fontSize: 18, cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.18)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.08)')}>
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <path d={dir === 'left' ? 'M11 3L5 9l6 6' : 'M7 3l6 6-6 6'} /></svg>
-    </button>
-  );
-
-  return ReactDOM.createPortal(
-    <div onClick={() => ctx.setFocus(null)}
-      onWheel={(e) => e.preventDefault()}
-      style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(24,20,16,.6)', backdropFilter: 'blur(14px)',
-        fontFamily: DC.font, color: '#fff' }}>
-
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 72, display: 'flex', alignItems: 'flex-start', padding: '16px 20px 0', gap: 16 }}>
-        <div style={{ position: 'relative' }}>
-          <button onClick={() => setDd((o) => !o)}
-            style={{ border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer', padding: '6px 8px',
-              borderRadius: 6, textAlign: 'left', fontFamily: 'inherit' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.3 }}>{meta.title}</span>
-              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ opacity: .7 }}><path d="M2 4l3.5 3.5L9 4"/></svg>
-            </span>
-            {meta.subtitle && <span style={{ display: 'block', fontSize: 13, opacity: .6, fontWeight: 400, marginTop: 2 }}>{meta.subtitle}</span>}
-          </button>
-          {ddOpen && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#2a251f', borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,.4)', padding: 4, minWidth: 200, zIndex: 10 }}>
-              {sectionOrder.map((sid) => (
-                <button key={sid} onClick={() => { setDd(false); const f = sectionMeta[sid].slotIds[0]; if (f) ctx.setFocus(`${sid}/${f}`); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
-                    background: sid === sectionId ? 'rgba(255,255,255,.1)' : 'transparent', color: '#fff',
-                    padding: '8px 12px', borderRadius: 5, fontSize: 14, fontWeight: sid === sectionId ? 600 : 400, fontFamily: 'inherit' }}>
-                  {sectionMeta[sid].title}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => ctx.setFocus(null)}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          style={{ border: 'none', background: 'transparent', color: 'rgba(255,255,255,.7)', width: 32, height: 32,
-            borderRadius: 16, fontSize: 20, cursor: 'pointer', lineHeight: 1, transition: 'background .12s' }}>×</button>
-      </div>
-
-      <div
-        style={{ position: 'absolute', top: 64, bottom: 56, left: 100, right: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-        <div onClick={(e) => e.stopPropagation()} style={{ width: width * scale, height: height * scale, position: 'relative' }}>
-          <div style={{ width, height, transform: `scale(${scale})`, transformOrigin: 'top left', background: '#fff', borderRadius: 2, overflow: 'hidden',
-            boxShadow: '0 20px 80px rgba(0,0,0,.4)' }}>
-            {children || <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}>{aid}</div>}
-          </div>
-        </div>
-        <div onClick={(e) => e.stopPropagation()} style={{ fontSize: 14, fontWeight: 500, opacity: .85, textAlign: 'center' }}>
-          {(sec.labels || {})[aid] ?? artboard.props.label}
-          <span style={{ opacity: .5, marginLeft: 10, fontVariantNumeric: 'tabular-nums' }}>{idx + 1} / {peers.length}</span>
-        </div>
-      </div>
-
-      <Arrow dir="left" onClick={() => go(-1)} />
-      <Arrow dir="right" onClick={() => go(1)} />
-
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8 }}>
-        {peers.map((p, i) => (
-          <button key={p} onClick={() => ctx.setFocus(`${sectionId}/${p}`)}
-            style={{ border: 'none', padding: 0, cursor: 'pointer', width: 6, height: 6, borderRadius: 3,
-              background: i === idx ? '#fff' : 'rgba(255,255,255,.3)' }} />
-        ))}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-Object.assign(window, { DesignCanvas, DCSection, DCArtboard });
-</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'IBM Plex Sans', sans-serif;
-    background: #f0f0f3;
-    color: #1E1C1A;
-    height: 100vh;
-    overflow: hidden;
+
+  :root {
+    --ink: #1E1C1A;
+    --ink-soft: rgba(30, 28, 26, 0.6);
+    --ink-mute: rgba(30, 28, 26, 0.45);
+    --ink-faint: rgba(30, 28, 26, 0.3);
+    --line: rgba(0, 0, 0, 0.08);
+    --line-strong: rgba(0, 0, 0, 0.12);
+    --sb-bg: #fafafa;
+    --sb-section: #f3f3f5;
+    --canvas-bg: #f0eee9;
   }
 
-  /* ─── Block visuals (Bento Grid Layouts v3 style) ─── */
-  .blk {
-    border-radius: 60px;
-    corner-shape: squircle;
-    -webkit-corner-shape: squircle;
-    overflow: hidden;
-    position: relative;
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: #e8e8eb;
+    color: var(--ink);
     display: flex;
     flex-direction: column;
-    background: #fff;
-    /* Neumorphic — light from top-left, shadow bottom-right */
-    box-shadow:
-      -8px -8px 16px rgba(255, 255, 255, 1),
-      8px 8px 16px rgba(0, 0, 0, 0.10);
+    font-size: 13px;
   }
-  .blk--accent {
-    /* Gradient blocks — softer cast shadow only, no inner highlight */
-    box-shadow: 8px 8px 18px rgba(0, 0, 0, 0.12);
-  }
-  .blk--heroh { flex-direction: row; }
 
-  /* Title / subtitle */
+  /* ════════════════════════════════════════════════
+     TOP NAV
+     ════════════════════════════════════════════════ */
+  .topnav {
+    flex-shrink: 0;
+    height: 52px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    z-index: 100;
+  }
+  .topnav-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .topnav-title small {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 400;
+    color: var(--ink-mute);
+    font-size: 11px;
+    margin-left: 10px;
+  }
+  .topnav-spacer { flex: 1; }
+
+  .tabs {
+    display: flex;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.04);
+    padding: 3px;
+    border-radius: 100px;
+  }
+  .tab {
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { background: var(--ink); color: #fff; }
+
+  .topnav-btn {
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    color: var(--ink);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .topnav-btn:hover { background: rgba(0, 0, 0, 0.04); }
+  .topnav-btn--primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .topnav-btn--primary:hover { background: #000; }
+
+  /* ════════════════════════════════════════════════
+     LAYOUT
+     ════════════════════════════════════════════════ */
+  .layout { flex: 1; display: flex; overflow: hidden; }
+
+  /* ════════════════════════════════════════════════
+     SIDEBAR
+     ════════════════════════════════════════════════ */
+  .sidebar {
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--sb-bg);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 0;
+  }
+  .sidebar.hidden { display: none; }
+
+  .sb-section {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sb-h {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sb-h-hint {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ink-faint);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .sb-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    gap: 10px;
+  }
+  .sb-label { font-size: 13px; font-weight: 500; color: var(--ink); }
+  .sb-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+
+  .sb-slider {
+    width: 100%;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    margin: 4px 0 14px;
+    cursor: pointer;
+  }
+  .sb-slider::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+  }
+  .sb-slider::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+  }
+
+  .sb-color {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .sb-color-swatch {
+    width: 22px; height: 22px;
+    border-radius: 5px;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .sb-color-swatch input {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    border: none; padding: 0;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .sb-color-input {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink);
+    background: #fff;
+    text-transform: uppercase;
+  }
+
+  .sb-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background: var(--sb-section);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 14px;
+  }
+  .sb-tab {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sb-tab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .sb-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sb-swatch {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s;
+    background-size: cover;
+    background-position: center;
+  }
+  .sb-swatch:hover { transform: scale(1.06); }
+  .sb-swatch.selected { border-color: var(--ink); }
+
+  .sb-imggrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sb-imgswatch {
+    aspect-ratio: 16 / 10;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s;
+    background-size: cover;
+    background-position: center;
+  }
+  .sb-imgswatch:hover { transform: scale(1.04); }
+  .sb-imgswatch.selected { border-color: var(--ink); }
+
+  .sb-sizerow {
+    display: grid;
+    grid-template-columns: 60px 1fr;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .sb-sizectrl {
+    display: grid;
+    grid-template-columns: 28px 28px 1fr 28px;
+    gap: 4px;
+    align-items: center;
+  }
+  .sb-iconbtn {
+    width: 28px; height: 28px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: var(--ink);
+    font-family: inherit;
+    padding: 0;
+    transition: background 0.15s;
+  }
+  .sb-iconbtn:hover { background: rgba(0, 0, 0, 0.04); }
+  .sb-iconbtn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .sb-numdisplay {
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .sb-btn {
+    width: 100%;
+    padding: 9px 12px;
+    background: #fff;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 8px;
+  }
+  .sb-btn:hover { background: rgba(0, 0, 0, 0.04); }
+  .sb-btn--danger { color: #d92d20; }
+  .sb-btn--danger:hover { background: rgba(217, 45, 32, 0.06); }
+  .sb-btn--primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .sb-btn--primary:hover { background: #000; }
+
+  .sb-btnrow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .sb-btnrow .sb-btn { margin-bottom: 0; }
+
+  .sb-input, .sb-textarea {
+    width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: #fff;
+    margin-bottom: 12px;
+    resize: vertical;
+  }
+  .sb-textarea { min-height: 50px; }
+  .sb-input:focus, .sb-textarea:focus { outline: none; border-color: var(--ink); }
+
+  .sb-select {
+    width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: #fff;
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+
+  .sb-twocol {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .sb-twocol > div { font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+
+  .sb-aligntabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background: var(--sb-section);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 12px;
+  }
+  .sb-aligntab {
+    padding: 7px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-soft);
+  }
+  .sb-aligntab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .sb-aligntab svg { width: 14px; height: 14px; }
+
+  .sb-posgrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 80px; height: 80px;
+    background: var(--sb-section);
+    border-radius: 8px;
+    padding: 6px;
+    gap: 2px;
+    margin-bottom: 14px;
+  }
+  .sb-posdot {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .sb-posdot::after {
+    content: '';
+    width: 5px; height: 5px;
+    background: var(--ink-faint);
+    border-radius: 50%;
+    transition: all 0.15s;
+  }
+  .sb-posdot:hover { background: rgba(0, 0, 0, 0.04); }
+  .sb-posdot.active::after {
+    background: var(--ink);
+    width: 7px; height: 7px;
+  }
+
+  .sb-empty {
+    padding: 24px 20px;
+    text-align: center;
+    color: var(--ink-mute);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* ════════════════════════════════════════════════
+     STAGE (V1/V2/V3 single-variant view)
+     ════════════════════════════════════════════════ */
+  .stage-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #e8e8eb;
+  }
+  .stage-wrap.hidden { display: none; }
+
+  .slide {
+    position: absolute;
+    width: 1920px; height: 1080px;
+    top: 50%; left: 50%;
+    transform-origin: center center;
+    display: none;
+  }
+  .slide.active { display: block; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    grid-template-rows: repeat(12, 1fr);
+    width: 100%; height: 100%;
+  }
+
+  /* ════════════════════════════════════════════════
+     BLOCK
+     ════════════════════════════════════════════════ */
+  .blk {
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    transition: outline 0.12s;
+    -webkit-corner-shape: squircle;
+    corner-shape: squircle;
+  }
+  .blk.selected {
+    outline: 3px solid #0961F2;
+    outline-offset: -3px;
+  }
+
+  .blk-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .blk--image .blk-inner {
+    background-size: cover;
+    background-position: center;
+  }
+
+  .blk--hero { padding: 0; }
+  .blk--hero .hero-photo {
+    flex: 1;
+    background-image: url('Val-photo.jpg');
+    background-size: cover;
+    background-position: center 22%;
+    -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+            mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+  }
+  .blk--hero .hero-text {
+    margin-top: -36px;
+    z-index: 2;
+    position: relative;
+  }
+
+  .blk--heroh { padding: 0; flex-direction: row; }
+  .blk--heroh .hero-photo {
+    width: 48%;
+    background-image: url('Val-photo.jpg');
+    background-size: cover;
+    background-position: center 22%;
+    -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+            mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  }
+  .blk--heroh .hero-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-left: -28px;
+    z-index: 2;
+  }
+
   .blk-title {
     font-weight: 700;
     line-height: 1;
@@ -575,38 +568,9 @@ Object.assign(window, { DesignCanvas, DCSection, DCArtboard });
     letter-spacing: 0.01em;
     white-space: pre-wrap;
   }
+  .blk--accent .blk-title,
+  .blk--accent .blk-sub { color: rgba(255, 255, 255, 0.95); }
 
-  /* Hero portrait (vertical) */
-  .hero-photo {
-    flex: 1;
-    background-image: url('Val-photo.jpg');
-    background-size: cover;
-    background-position: center 22%;
-    -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
-            mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
-  }
-  /* Hero portrait (horizontal — left-side photo, right-side text) */
-  .hero-photo--h {
-    flex: 0 0 48%;
-    -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
-            mask-image: linear-gradient(to right, black 75%, transparent 100%);
-  }
-  .hero-text {
-    margin-top: -36px;
-    z-index: 2;
-    position: relative;
-  }
-  .hero-text--h {
-    flex: 1;
-    margin-top: 0;
-    margin-left: -28px;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-
-  /* Image label (rounded pill over image blocks) */
   .img-label {
     position: absolute;
     bottom: 16px;
@@ -620,54 +584,298 @@ Object.assign(window, { DesignCanvas, DCSection, DCArtboard });
     font-family: 'IBM Plex Mono', monospace;
     font-size: 11px;
     font-weight: 500;
-    color: #1E1C1A;
+    color: var(--ink);
     text-align: center;
     letter-spacing: -0.01em;
     z-index: 5;
   }
+
+  /* ════════════════════════════════════════════════
+     COMPARE MODE
+     ════════════════════════════════════════════════ */
+  #compare-root {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--canvas-bg);
+    display: none;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+  }
+  #compare-root.active { display: block; }
+  #compare-root.dragging { cursor: grabbing; }
+
+  .cmp-grid-bg {
+    position: absolute;
+    inset: -6000px;
+    background-image: url("data:image/svg+xml,%3Csvg width='120' height='120' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M120 0H0v120' fill='none' stroke='rgba(0%2C0%2C0%2C0.06)' stroke-width='1'/%3E%3C/svg%3E");
+    background-size: 120px 120px;
+    pointer-events: none;
+  }
+  .cmp-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  .cmp-row {
+    display: flex;
+    gap: 100px;
+    padding: 80px 80px;
+  }
+  .cmp-artboard {
+    flex-shrink: 0;
+    position: relative;
+    cursor: zoom-in;
+  }
+  .cmp-label {
+    font-size: 18px;
+    font-weight: 500;
+    color: rgba(60,50,40,.7);
+    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .cmp-stage {
+    width: 1920px;
+    height: 1080px;
+    position: relative;
+    border-radius: 2px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+    transition: box-shadow 0.15s;
+  }
+  .cmp-artboard:hover .cmp-stage {
+    box-shadow: 0 2px 6px rgba(0,0,0,.12), 0 8px 32px rgba(0,0,0,.10);
+  }
+  .cmp-stage > .grid {
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    grid-template-rows: repeat(12, 1fr);
+    width: 100%; height: 100%;
+  }
+  .cmp-artboard .blk { pointer-events: none; cursor: default; }
+
+  /* ════════════════════════════════════════════════
+     FOCUS OVERLAY
+     ════════════════════════════════════════════════ */
+  #focus-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(24,20,16,.6);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  #focus-overlay.active { display: flex; }
+
+  .focus-stage {
+    position: relative;
+    overflow: hidden;
+    border-radius: 2px;
+    box-shadow: 0 20px 80px rgba(0,0,0,.4);
+  }
+  .focus-stage > .grid {
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    grid-template-rows: repeat(12, 1fr);
+    width: 1920px;
+    height: 1080px;
+    transform-origin: 0 0;
+  }
+  .focus-stage .blk { pointer-events: none; cursor: default; }
+
+  .focus-label {
+    margin-top: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    opacity: .85;
+  }
+  .focus-label .num {
+    opacity: .5;
+    margin-left: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .focus-close {
+    position: absolute;
+    top: 20px; right: 20px;
+    width: 32px; height: 32px;
+    border-radius: 16px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,.7);
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+    transition: background 0.12s;
+  }
+  .focus-close:hover { background: rgba(255,255,255,.12); }
+  .focus-arrow {
+    position: absolute;
+    top: 50%;
+    width: 44px; height: 44px;
+    border-radius: 22px;
+    border: none;
+    background: rgba(255,255,255,.08);
+    color: rgba(255,255,255,.9);
+    cursor: pointer;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .focus-arrow:hover { background: rgba(255,255,255,.18); }
+  .focus-arrow.left { left: 28px; }
+  .focus-arrow.right { right: 28px; }
+  .focus-dots {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .focus-dot {
+    width: 6px; height: 6px;
+    border-radius: 3px;
+    background: rgba(255,255,255,.3);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .focus-dot.active { background: #fff; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 100px;
+    font-size: 13px;
+    z-index: 1000;
+    transition: transform 0.25s;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .stage-wrap::-webkit-scrollbar { display: none; }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
-<div id="root"></div>
 
-<script type="text/babel">
+<div class="topnav">
+  <div class="topnav-title">Бенто-редактор<small>Валерий Рыжов · 1920×1080</small></div>
+  <div class="topnav-spacer"></div>
+  <div class="tabs">
+    <button class="tab active" data-tab="v1">V1 — Classic</button>
+    <button class="tab" data-tab="v2">V2 — Manifest First</button>
+    <button class="tab" data-tab="v3">V3 — Portfolio Heavy</button>
+    <button class="tab" data-tab="compare">Сравнить</button>
+  </div>
+  <button class="topnav-btn" id="btn-reset">Сбросить</button>
+  <button class="topnav-btn topnav-btn--primary" id="btn-export">Экспорт HTML</button>
+</div>
 
-/* ─── Tokens (from Bento Grid Layouts v3) ─── */
-const C = {
-  ink:      '#1E1C1A',
-  surface:  '#f0f0f3',
-  surface2: '#FFFFFF',
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="stage-wrap" id="stage-wrap">
+    <div class="slide active" id="slide-v1"><div class="grid" id="grid-v1"></div></div>
+    <div class="slide" id="slide-v2"><div class="grid" id="grid-v2"></div></div>
+    <div class="slide" id="slide-v3"><div class="grid" id="grid-v3"></div></div>
+  </div>
+  <div id="compare-root">
+    <div class="cmp-grid-bg"></div>
+    <div class="cmp-canvas">
+      <div class="cmp-row">
+        <div class="cmp-artboard" data-variant="v1">
+          <div class="cmp-label">V1 — Classic</div>
+          <div class="cmp-stage"><div class="grid"></div></div>
+        </div>
+        <div class="cmp-artboard" data-variant="v2">
+          <div class="cmp-label">V2 — Manifest First</div>
+          <div class="cmp-stage"><div class="grid"></div></div>
+        </div>
+        <div class="cmp-artboard" data-variant="v3">
+          <div class="cmp-label">V3 — Portfolio Heavy</div>
+          <div class="cmp-stage"><div class="grid"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="focus-overlay">
+  <button class="focus-close" type="button">&times;</button>
+  <button class="focus-arrow left" type="button">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 3L5 9l6 6"/></svg>
+  </button>
+  <button class="focus-arrow right" type="button">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 3l6 6-6 6"/></svg>
+  </button>
+  <div class="focus-stage"><div class="grid"></div></div>
+  <div class="focus-label"></div>
+  <div class="focus-dots"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   CONFIG / DATA
+   ════════════════════════════════════════════════════════════════ */
+
+const GRADIENTS = {
+  deepBlue:  { name: 'Deep Blue',  css: 'linear-gradient({a}deg, #0961F2, #0241C8)' },
+  mint:      { name: 'Mint',       css: 'linear-gradient({a}deg, #03FF8C, #5CF0F7)' },
+  raspberry: { name: 'Raspberry',  css: 'linear-gradient({a}deg, #FE1E7A, #F89530)' },
+  skyBlue:   { name: 'Sky',        css: 'linear-gradient({a}deg, #0567FF, #5BE7FF)' },
+  yellow:    { name: 'Yellow',     css: 'linear-gradient({a}deg, #FF9B19, #FFF358)' },
+  darkTeal:  { name: 'Dark Teal',  css: 'linear-gradient({a}deg, #3F3369, #32A790)' },
+  lavender:  { name: 'Lavender',   css: 'linear-gradient({a}deg, #6E70FF, #EFA9FF)' },
 };
-const G = {
-  deepBlue:  'linear-gradient(135deg, #0961F2, #0241C8)',
-  mint:      'linear-gradient(135deg, #03FF8C, #5CF0F7)',
-  raspberry: 'linear-gradient(135deg, #FE1E7A, #F89530)',
-  skyBlue:   'linear-gradient(135deg, #0567FF, #5BE7FF)',
-  yellow:    'linear-gradient(135deg, #FF9B19, #FFF358)',
-  darkTeal:  'linear-gradient(135deg, #3F3369, #32A790)',
-  lavender:  'linear-gradient(135deg, #6E70FF, #EFA9FF)',
-};
 
-/* ─── Image registry — wired to the user's actual files ─── */
-const enc = encodeURI;
 const IMAGES = {
-  banking:  enc('My-projects-R-bank-employee-dashboard-20239.jpg'),
-  bbtCover: '1.jpg',
-  bbtProg:  '6.jpg',
-  bbtVenue: '7.jpg',
-  syncoraP: 'Slide4.jpeg',
-  syncoraA: 'Slide5.jpeg',
-  journey:  enc('Journey – Rules.jpg'),
-  journey2: enc('Journey – Rules2.jpg'),
-  streetD:  enc('Street Dogs Quickstart - layout-id24-Sprite-Graffiti-Cover.jpg'),
-  streetD2: enc('Street Dogs Quickstart - layout-id24-Sprite-Graffiti3.jpg'),
-  streetD3: enc('Street Dogs Quickstart - layout-id24-Sprite-Graffiti4.jpg'),
+  banking:  { name: 'R-Bank · Dashboard',     file: 'My-projects-R-bank-employee-dashboard-20239.jpg' },
+  bbtCover: { name: 'BBT Travel · Forum',     file: '1.jpg' },
+  bbtProg:  { name: 'IMG Show · Programme',   file: '6.jpg' },
+  bbtVenue: { name: 'IMG Show · Venue',       file: '7.jpg' },
+  syncoraP: { name: 'Syncora · The Problem',  file: 'Slide4.jpeg' },
+  syncoraA: { name: 'Syncora · The Solution', file: 'Slide5.jpeg' },
+  journey:  { name: 'Journey · Lost Souls',   file: 'Journey – Rules.jpg' },
+  journey2: { name: 'Journey · Structure',    file: 'Journey – Rules2.jpg' },
+  streetD:  { name: 'Street Dogs · Cover',    file: 'Street Dogs Quickstart - layout-id24-Sprite-Graffiti-Cover.jpg' },
+  streetD2: { name: 'Street Dogs · Spread 3', file: 'Street Dogs Quickstart - layout-id24-Sprite-Graffiti3.jpg' },
+  streetD3: { name: 'Street Dogs · Spread 4', file: 'Street Dogs Quickstart - layout-id24-Sprite-Graffiti4.jpg' },
 };
 
-/* ─── Block defaults (from index_4) ─── */
-let nextId = 0;
-const newId = () => `b${++nextId}`;
-const D = (o = {}) => ({
+const FONTS = ['IBM Plex Sans', 'IBM Plex Mono', 'Inter', 'Manrope'];
+
+const VARIANTS = [
+  { id: 'v1', name: 'V1 — Classic' },
+  { id: 'v2', name: 'V2 — Manifest First' },
+  { id: 'v3', name: 'V3 — Portfolio Heavy' },
+];
+
+const encUrl = (s) => encodeURI(s).replace(/'/g, "%27");
+
+/* ════════════════════════════════════════════════════════════════
+   DEFAULT STATE
+   ════════════════════════════════════════════════════════════════ */
+
+const blockDefaults = (overrides = {}) => ({
+  id: '',
   type: 'plain',
   gradient: null,
   gradAngle: 135,
@@ -686,298 +894,1103 @@ const D = (o = {}) => ({
   position: 'center-left',
   padding: 32,
   lineHeight: 1.1,
-  ...o,
-  id: newId(),
+  borderWidth: 0,
+  borderColor: '#363D49',
+  ...overrides,
 });
 
-/* ═══ Variant 1 — Classic ═══ */
-const V1 = [
-  D({ type:'hero', col:1,row:1,cspan:6,rspan:6,
-      title:'Валерий\nРыжов', subtitle:'Питч-деки · Брендинг · Презентации',
-      titleSize:38, subtitleSize:13, padding:32, lineHeight:0.95 }),
-  D({ col:1,row:7,cspan:6,rspan:4,
-      title:'Что я делаю',
-      subtitle:'— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
-      titleSize:14, subtitleSize:18, position:'top-left',
-      titleColor:'rgba(30, 28, 26, 0.45)' }),
-  D({ col:1,row:11,cspan:3,rspan:2,
-      title:'8+', subtitle:'лет в дизайне',
-      titleSize:56, subtitleSize:12, position:'center-center', align:'center' }),
-  D({ col:4,row:11,cspan:3,rspan:2,
-      title:'Вертикали', subtitle:'Healthcare · Edtech\nTravel · Banking',
-      titleSize:11, subtitleSize:13, position:'center-center', align:'center',
-      titleColor:'rgba(30, 28, 26, 0.45)' }),
-  D({ type:'gradient', gradient:'deepBlue', col:7,row:1,cspan:8,rspan:5,
-      title:'ИИ генерирует.\nДирижёр делает так,\nчтобы это работало.',
-      subtitle:'— Манифест',
-      titleSize:56, subtitleSize:11,
-      titleColor:'#ffffff', subtitleColor:'rgba(255,255,255,0.55)',
-      position:'center-left', padding:48, lineHeight:1.08 }),
-  D({ type:'image', image:'banking',  imageLabel:'Дашборд · Banking · NDA',
-      col:7,row:6,cspan:4,rspan:4 }),
-  D({ type:'image', image:'bbtCover', imageLabel:'Конференция · BBT Travel',
-      col:11,row:6,cspan:4,rspan:4 }),
-  D({ col:7,row:10,cspan:8,rspan:3,
-      title:'Напишите — отвечу в тот же день',
-      subtitle:'tg @shentakuki     itsuno@gmail.com',
-      titleSize:22, subtitleSize:13, padding:32, position:'center-left' }),
-  D({ type:'image', image:'syncoraP', imageLabel:'Питч-дек · Tech Startup · NDA',
-      col:15,row:1,cspan:6,rspan:4 }),
-  D({ col:15,row:5,cspan:6,rspan:3,
-      title:'от 30 тыс. ₽',
-      subtitle:'3–5 дней под ключ\n\nЭкспресс-карточка как эта — 15–20 тыс. ₽',
-      titleSize:38, subtitleSize:12, position:'center-left', padding:32, lineHeight:1 }),
-  D({ type:'gradient', gradient:'skyBlue', col:15,row:8,cspan:6,rspan:2,
-      title:'Sold Out',
-      subtitle:'BBT Travel — презентация продала спонсорские пакеты',
-      titleSize:30, subtitleSize:12,
-      titleColor:'#ffffff', subtitleColor:'rgba(255,255,255,0.95)',
-      position:'center-left' }),
-  D({ type:'image', image:'streetD', imageLabel:'Айдентика · Street Dogs · Rebel',
-      col:15,row:10,cspan:6,rspan:3 }),
-];
+let nextBlockId = 0;
+const newId = () => `b${++nextBlockId}`;
 
-/* ═══ Variant 2 — Manifest First ═══ */
-const V2 = [
-  D({ type:'heroh', col:1,row:1,cspan:8,rspan:4,
-      title:'Валерий\nРыжов', subtitle:'Питч-деки · Брендинг\nПрезентации',
-      titleSize:44, subtitleSize:13, padding:32, lineHeight:0.95 }),
-  D({ type:'gradient', gradient:'deepBlue', col:9,row:1,cspan:12,rspan:4,
-      title:'ИИ генерирует. Дирижёр\nделает так, чтобы\nэто работало.',
-      subtitle:'— Манифест',
-      titleSize:64, subtitleSize:11,
-      titleColor:'#ffffff', subtitleColor:'rgba(255,255,255,0.55)',
-      position:'center-left', padding:56, lineHeight:1.05 }),
-  D({ type:'image', image:'bbtCover', imageLabel:'Конференция · BBT Travel',
-      col:1, row:5,cspan:5,rspan:4 }),
-  D({ type:'image', image:'banking',  imageLabel:'Дашборд · Banking · NDA',
-      col:6, row:5,cspan:5,rspan:4 }),
-  D({ type:'image', image:'syncoraP', imageLabel:'Питч-дек · Tech Startup',
-      col:11,row:5,cspan:5,rspan:4 }),
-  D({ type:'image', image:'streetD',  imageLabel:'Street Dogs · Rebel',
-      col:16,row:5,cspan:5,rspan:4 }),
-  D({ col:1,row:9,cspan:6,rspan:4,
-      title:'Что я делаю',
-      subtitle:'— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
-      titleSize:14, subtitleSize:18,
-      titleColor:'rgba(30, 28, 26, 0.45)', position:'top-left' }),
-  D({ col:7,row:9,cspan:4,rspan:4,
-      title:'от 30 ₽К', subtitle:'3–5 дней\n\nБенто-карточка\n15–20 ₽К',
-      titleSize:42, subtitleSize:12, position:'center-left', padding:28, lineHeight:1 }),
-  D({ type:'gradient', gradient:'raspberry', col:11,row:9,cspan:4,rspan:2,
-      title:'8+ лет', subtitle:'опыта в дизайне\nи брендинге',
-      titleSize:38, subtitleSize:12,
-      titleColor:'#ffffff', subtitleColor:'rgba(255,255,255,0.92)',
-      position:'center-center', align:'center' }),
-  D({ col:11,row:11,cspan:4,rspan:2,
-      title:'Вертикали', subtitle:'Healthcare · Edtech\nTravel · Banking',
-      titleSize:11, subtitleSize:13,
-      titleColor:'rgba(30, 28, 26, 0.45)',
-      position:'center-center', align:'center' }),
-  D({ col:15,row:9,cspan:6,rspan:4,
-      title:'Напишите — отвечу\nв тот же день',
-      subtitle:'tg @shentakuki\nitsuno@gmail.com\n\nОбсудим за 15 минут',
-      titleSize:22, subtitleSize:13,
-      position:'center-center', align:'center', lineHeight:1.15 }),
-];
-
-/* ═══ Variant 3 — Portfolio Heavy ═══ */
-const V3 = [
-  D({ type:'hero', col:1,row:1,cspan:5,rspan:7,
-      title:'Валерий\nРыжов', subtitle:'Питч-деки · Брендинг\nПрезентации',
-      titleSize:36, subtitleSize:12, padding:28, lineHeight:0.95 }),
-  D({ col:1,row:8,cspan:5,rspan:5,
-      title:'Что я делаю',
-      subtitle:'— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
-      titleSize:14, subtitleSize:16,
-      titleColor:'rgba(30, 28, 26, 0.45)', position:'top-left' }),
-  D({ type:'image', image:'banking',
-      imageLabel:'Дашборд · R-Bank · корпоративный портал · NDA',
-      col:6,row:1,cspan:9,rspan:5 }),
-  D({ type:'image', image:'bbtCover', imageLabel:'Конференция · BBT Travel',
-      col:6,row:6,cspan:5,rspan:4 }),
-  D({ type:'image', image:'streetD',  imageLabel:'Street Dogs · Rebel',
-      col:11,row:6,cspan:4,rspan:4 }),
-  D({ type:'gradient', gradient:'deepBlue', col:15,row:1,cspan:6,rspan:5,
-      title:'ИИ генерирует.\nДирижёр делает,\nчтобы работало.',
-      subtitle:'— Манифест',
-      titleSize:36, subtitleSize:11,
-      titleColor:'#ffffff', subtitleColor:'rgba(255,255,255,0.55)',
-      position:'center-left', padding:36, lineHeight:1.08 }),
-  D({ type:'image', image:'syncoraP', imageLabel:'Питч-дек · Tech Startup · NDA',
-      col:15,row:6,cspan:6,rspan:4 }),
-  D({ col:6,row:10,cspan:3,rspan:3,
-      title:'8+', subtitle:'лет в дизайне',
-      titleSize:50, subtitleSize:11, position:'center-center', align:'center' }),
-  D({ col:9,row:10,cspan:3,rspan:3,
-      title:'Вертикали', subtitle:'Healthcare\nEdtech · Travel\nBanking',
-      titleSize:10, subtitleSize:12,
-      titleColor:'rgba(30, 28, 26, 0.45)',
-      position:'center-center', align:'center' }),
-  D({ col:12,row:10,cspan:3,rspan:3,
-      title:'от 30 ₽К', subtitle:'3–5 дней\n\nБенто 15–20₽К',
-      titleSize:26, subtitleSize:11, position:'center-left', padding:22, lineHeight:1 }),
-  D({ type:'gradient', gradient:'skyBlue', col:15,row:10,cspan:3,rspan:3,
-      title:'Sold Out', subtitle:'BBT Travel — продала спонсорские пакеты',
-      titleSize:22, subtitleSize:11,
-      titleColor:'#ffffff', subtitleColor:'rgba(255,255,255,0.95)',
-      position:'center-left', padding:22 }),
-  D({ col:18,row:10,cspan:3,rspan:3,
-      title:'Напишите —\nотвечу сегодня',
-      subtitle:'tg @shentakuki\nitsuno@gmail.com',
-      titleSize:14, subtitleSize:11,
-      position:'center-center', align:'center', padding:18, lineHeight:1.2 }),
-];
-
-/* ─── Block renderer ─── */
-const flexAxis = {
-  top: 'flex-start', center: 'center', bottom: 'flex-end',
-  left: 'flex-start', right: 'flex-end',
-};
-
-function TextParts({ b, light }) {
-  return (
-    <React.Fragment>
-      {b.title && (
-        <div className="blk-title" style={{
-          fontFamily: `'${b.titleFont}', sans-serif`,
-          fontSize: b.titleSize,
-          color: light ? '#fff' : b.titleColor,
-          lineHeight: b.lineHeight,
-        }}>{b.title}</div>
-      )}
-      {b.subtitle && (
-        <div className="blk-sub" style={{
-          fontFamily: `'${b.subtitleFont}', monospace`,
-          fontSize: b.subtitleSize,
-          color: light ? 'rgba(255,255,255,0.95)' : b.subtitleColor,
-        }}>{b.subtitle}</div>
-      )}
-    </React.Fragment>
-  );
+function makeVariant1() {
+  const b = [];
+  b.push(blockDefaults({ id: newId(), type: 'hero', col: 1, row: 1, cspan: 6, rspan: 6,
+    title: 'Валерий\nРыжов', subtitle: 'Питч-деки · Брендинг · Презентации',
+    titleSize: 38, subtitleSize: 13, padding: 32, lineHeight: 0.95 }));
+  b.push(blockDefaults({ id: newId(), col: 1, row: 7, cspan: 6, rspan: 4,
+    title: 'Что я делаю', subtitle: '— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
+    titleSize: 14, subtitleSize: 18, position: 'top-left',
+    titleColor: 'rgba(30, 28, 26, 0.45)' }));
+  b.push(blockDefaults({ id: newId(), col: 1, row: 11, cspan: 3, rspan: 2,
+    title: '8+', subtitle: 'лет в дизайне',
+    titleSize: 56, subtitleSize: 12, position: 'center-center', align: 'center' }));
+  b.push(blockDefaults({ id: newId(), col: 4, row: 11, cspan: 3, rspan: 2,
+    title: 'Вертикали', subtitle: 'Healthcare · Edtech\nTravel · Banking',
+    titleSize: 11, subtitleSize: 13, position: 'center-center', align: 'center',
+    titleColor: 'rgba(30, 28, 26, 0.45)' }));
+  b.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'deepBlue', col: 7, row: 1, cspan: 8, rspan: 5,
+    title: 'ИИ генерирует.\nДирижёр делает так,\nчтобы это работало.',
+    subtitle: '— Манифест',
+    titleSize: 56, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.55)',
+    position: 'center-left', padding: 48, lineHeight: 1.08 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'banking',
+    imageLabel: 'Дашборд · Banking · NDA', col: 7, row: 6, cspan: 4, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'bbtCover',
+    imageLabel: 'Конференция · BBT Travel', col: 11, row: 6, cspan: 4, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), col: 7, row: 10, cspan: 8, rspan: 3,
+    title: 'Напишите — отвечу в тот же день',
+    subtitle: 'tg @shentakuki     itsuno@gmail.com',
+    titleSize: 22, subtitleSize: 13, padding: 32, position: 'center-left' }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'syncoraP',
+    imageLabel: 'Питч-дек · Tech Startup · NDA', col: 15, row: 1, cspan: 6, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), col: 15, row: 5, cspan: 6, rspan: 3,
+    title: 'от 30 тыс. ₽', subtitle: '3–5 дней под ключ\n\nЭкспресс-карточка как эта — 15–20 тыс. ₽',
+    titleSize: 38, subtitleSize: 12, position: 'center-left', padding: 32, lineHeight: 1 }));
+  b.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'skyBlue',
+    col: 15, row: 8, cspan: 6, rspan: 2,
+    title: 'Sold Out', subtitle: 'BBT Travel — презентация продала спонсорские пакеты',
+    titleSize: 30, subtitleSize: 12,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.95)',
+    position: 'center-left' }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'streetD',
+    imageLabel: 'Айдентика · Street Dogs · Rebel', col: 15, row: 10, cspan: 6, rspan: 3 }));
+  return b;
 }
 
-function Blk({ b }) {
+function makeVariant2() {
+  const b = [];
+  b.push(blockDefaults({ id: newId(), type: 'heroh', col: 1, row: 1, cspan: 8, rspan: 4,
+    title: 'Валерий\nРыжов', subtitle: 'Питч-деки · Брендинг\nПрезентации',
+    titleSize: 44, subtitleSize: 13, padding: 32, lineHeight: 0.95 }));
+  b.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'deepBlue',
+    col: 9, row: 1, cspan: 12, rspan: 4,
+    title: 'ИИ генерирует. Дирижёр\nделает так, чтобы\nэто работало.',
+    subtitle: '— Манифест',
+    titleSize: 64, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.55)',
+    position: 'center-left', padding: 56, lineHeight: 1.05 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'bbtCover',
+    imageLabel: 'Конференция · BBT Travel', col: 1, row: 5, cspan: 5, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'banking',
+    imageLabel: 'Дашборд · Banking · NDA', col: 6, row: 5, cspan: 5, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'syncoraP',
+    imageLabel: 'Питч-дек · Tech Startup', col: 11, row: 5, cspan: 5, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'streetD',
+    imageLabel: 'Street Dogs · Rebel', col: 16, row: 5, cspan: 5, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), col: 1, row: 9, cspan: 6, rspan: 4,
+    title: 'Что я делаю',
+    subtitle: '— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
+    titleSize: 14, subtitleSize: 18,
+    titleColor: 'rgba(30, 28, 26, 0.45)', position: 'top-left' }));
+  b.push(blockDefaults({ id: newId(), col: 7, row: 9, cspan: 4, rspan: 4,
+    title: 'от 30 ₽К', subtitle: '3–5 дней\n\nБенто-карточка\n15–20 ₽К',
+    titleSize: 42, subtitleSize: 12, position: 'center-left', padding: 28, lineHeight: 1 }));
+  b.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'raspberry',
+    col: 11, row: 9, cspan: 4, rspan: 2,
+    title: '8+ лет', subtitle: 'опыта в дизайне\nи брендинге',
+    titleSize: 38, subtitleSize: 12,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.92)',
+    position: 'center-center', align: 'center' }));
+  b.push(blockDefaults({ id: newId(), col: 11, row: 11, cspan: 4, rspan: 2,
+    title: 'Вертикали', subtitle: 'Healthcare · Edtech\nTravel · Banking',
+    titleSize: 11, subtitleSize: 13,
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+    position: 'center-center', align: 'center' }));
+  b.push(blockDefaults({ id: newId(), col: 15, row: 9, cspan: 6, rspan: 4,
+    title: 'Напишите — отвечу\nв тот же день',
+    subtitle: 'tg @shentakuki\nitsuno@gmail.com\n\nОбсудим за 15 минут',
+    titleSize: 22, subtitleSize: 13,
+    position: 'center-center', align: 'center', lineHeight: 1.15 }));
+  return b;
+}
+
+function makeVariant3() {
+  const b = [];
+  b.push(blockDefaults({ id: newId(), type: 'hero', col: 1, row: 1, cspan: 5, rspan: 7,
+    title: 'Валерий\nРыжов', subtitle: 'Питч-деки · Брендинг\nПрезентации',
+    titleSize: 36, subtitleSize: 12, padding: 28, lineHeight: 0.95 }));
+  b.push(blockDefaults({ id: newId(), col: 1, row: 8, cspan: 5, rspan: 5,
+    title: 'Что я делаю',
+    subtitle: '— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
+    titleSize: 14, subtitleSize: 16,
+    titleColor: 'rgba(30, 28, 26, 0.45)', position: 'top-left' }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'banking',
+    imageLabel: 'Дашборд · R-Bank · корпоративный портал · NDA',
+    col: 6, row: 1, cspan: 9, rspan: 5 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'bbtCover',
+    imageLabel: 'Конференция · BBT Travel', col: 6, row: 6, cspan: 5, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'streetD',
+    imageLabel: 'Street Dogs · Rebel', col: 11, row: 6, cspan: 4, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'deepBlue',
+    col: 15, row: 1, cspan: 6, rspan: 5,
+    title: 'ИИ генерирует.\nДирижёр делает,\nчтобы работало.',
+    subtitle: '— Манифест',
+    titleSize: 36, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.55)',
+    position: 'center-left', padding: 36, lineHeight: 1.08 }));
+  b.push(blockDefaults({ id: newId(), type: 'image', image: 'syncoraP',
+    imageLabel: 'Питч-дек · Tech Startup · NDA', col: 15, row: 6, cspan: 6, rspan: 4 }));
+  b.push(blockDefaults({ id: newId(), col: 6, row: 10, cspan: 3, rspan: 3,
+    title: '8+', subtitle: 'лет в дизайне',
+    titleSize: 50, subtitleSize: 11, position: 'center-center', align: 'center' }));
+  b.push(blockDefaults({ id: newId(), col: 9, row: 10, cspan: 3, rspan: 3,
+    title: 'Вертикали', subtitle: 'Healthcare\nEdtech · Travel\nBanking',
+    titleSize: 10, subtitleSize: 12,
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+    position: 'center-center', align: 'center' }));
+  b.push(blockDefaults({ id: newId(), col: 12, row: 10, cspan: 3, rspan: 3,
+    title: 'от 30 ₽К', subtitle: '3–5 дней\n\nБенто 15–20₽К',
+    titleSize: 26, subtitleSize: 11, position: 'center-left', padding: 22, lineHeight: 1 }));
+  b.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'skyBlue',
+    col: 15, row: 10, cspan: 3, rspan: 3,
+    title: 'Sold Out', subtitle: 'BBT Travel — продала спонсорские пакеты',
+    titleSize: 22, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.95)',
+    position: 'center-left', padding: 22 }));
+  b.push(blockDefaults({ id: newId(), col: 18, row: 10, cspan: 3, rspan: 3,
+    title: 'Напишите —\nотвечу сегодня',
+    subtitle: 'tg @shentakuki\nitsuno@gmail.com',
+    titleSize: 14, subtitleSize: 11,
+    position: 'center-center', align: 'center', padding: 18, lineHeight: 1.2 }));
+  return b;
+}
+
+const initialState = () => ({
+  global: {
+    gridGap: 30,
+    radius: 60,
+    shadowIntensity: 14,
+    shadowDark: '#000000', shadowDarkAlpha: 0.10,
+    shadowLight: '#FFFFFF', shadowLightAlpha: 1.0,
+    pageBg: '#f0f0f3',
+    blockBg: '#FFFFFF',
+    borderWidth: 0,
+    borderColor: '#363D49',
+  },
+  variants: {
+    v1: makeVariant1(),
+    v2: makeVariant2(),
+    v3: makeVariant3(),
+  },
+  active: 'v1',
+  selected: null,
+});
+
+let state = initialState();
+
+/* ════════════════════════════════════════════════════════════════
+   RENDERING
+   ════════════════════════════════════════════════════════════════ */
+
+function getBlockBg(b, g) {
+  if (b.type === 'gradient' && b.gradient && GRADIENTS[b.gradient]) {
+    return GRADIENTS[b.gradient].css.replace('{a}', b.gradAngle || 135);
+  }
+  return g.blockBg;
+}
+
+function shadowCss(g) {
+  const i = g.shadowIntensity;
+  const lo = Math.round(i * 0.6);
+  const dark = hexToRgba(g.shadowDark, g.shadowDarkAlpha);
+  const light = hexToRgba(g.shadowLight, g.shadowLightAlpha);
+  return `-${lo}px -${lo}px ${i}px ${light}, ${lo}px ${lo}px ${i}px ${dark}`;
+}
+
+function shadowAccentCss(g) {
+  const i = g.shadowIntensity + 2;
+  const lo = Math.round(i * 0.5);
+  return `${lo}px ${lo}px ${i}px ${hexToRgba(g.shadowDark, g.shadowDarkAlpha + 0.02)}`;
+}
+
+function hexToRgba(hex, alpha) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function positionStyle(pos) {
+  const [v, h] = pos.split('-');
+  const map = { top: 'flex-start', center: 'center', bottom: 'flex-end',
+                left: 'flex-start', right: 'flex-end' };
+  return `justify-content: ${map[v]}; align-items: ${map[h]};`;
+}
+
+function renderBlock(b, variantId) {
+  const g = state.global;
   const isAccent = b.type === 'gradient';
   const isImage  = b.type === 'image';
   const isHero   = b.type === 'hero';
   const isHeroH  = b.type === 'heroh';
 
+  const bg = isImage ? g.blockBg : getBlockBg(b, g);
+  const shadow = isAccent ? shadowAccentCss(g) : shadowCss(g);
+  const sel = state.selected && state.selected.variant === variantId && state.selected.blockId === b.id;
+
   const cls = ['blk'];
   if (isAccent) cls.push('blk--accent');
+  if (isImage)  cls.push('blk--image');
+  if (isHero)   cls.push('blk--hero');
   if (isHeroH)  cls.push('blk--heroh');
+  if (sel)      cls.push('selected');
 
-  let bg = C.surface2;
-  if (isAccent && b.gradient && G[b.gradient]) {
-    bg = G[b.gradient].replace('135deg', `${b.gradAngle || 135}deg`);
+  const blockStyle = `
+    grid-column: ${b.col} / span ${b.cspan};
+    grid-row: ${b.row} / span ${b.rspan};
+    background: ${bg};
+    border-radius: ${g.radius}px;
+    box-shadow: ${shadow};
+    border: ${b.borderWidth ? `${b.borderWidth}px solid ${b.borderColor}` : 'none'};
+  `;
+
+  const div = document.createElement('div');
+  div.className = cls.join(' ');
+  div.style.cssText = blockStyle;
+  div.dataset.blockId = b.id;
+  div.dataset.variant = variantId;
+
+  if (isImage && b.image && IMAGES[b.image]) {
+    div.style.backgroundImage = `url('${encUrl(IMAGES[b.image].file)}')`;
+    div.style.backgroundSize = 'cover';
+    div.style.backgroundPosition = 'center';
+    if (b.imageLabel) {
+      const label = document.createElement('div');
+      label.className = 'img-label';
+      label.textContent = b.imageLabel;
+      div.appendChild(label);
+    }
+  } else if (isHero) {
+    const photo = document.createElement('div');
+    photo.className = 'hero-photo';
+    div.appendChild(photo);
+    if (b.title || b.subtitle) {
+      const text = document.createElement('div');
+      text.className = 'hero-text';
+      text.style.cssText = `padding: 0 ${b.padding}px ${b.padding}px;`;
+      addTextContent(text, b);
+      div.appendChild(text);
+    }
+  } else if (isHeroH) {
+    const photo = document.createElement('div');
+    photo.className = 'hero-photo';
+    div.appendChild(photo);
+    if (b.title || b.subtitle) {
+      const text = document.createElement('div');
+      text.className = 'hero-text';
+      text.style.cssText = `padding: ${b.padding}px;`;
+      addTextContent(text, b);
+      div.appendChild(text);
+    }
+  } else {
+    const inner = document.createElement('div');
+    inner.className = 'blk-inner';
+    inner.style.cssText = `padding: ${b.padding}px; ${positionStyle(b.position)} text-align: ${b.align};`;
+    addTextContent(inner, b);
+    div.appendChild(inner);
   }
 
-  const baseStyle = {
-    gridColumn: `${b.col} / span ${b.cspan}`,
-    gridRow:    `${b.row} / span ${b.rspan}`,
-    background: bg,
-  };
+  div.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectBlock(variantId, b.id);
+  });
 
+  return div;
+}
+
+function addTextContent(parent, b) {
+  if (b.title) {
+    const t = document.createElement('div');
+    t.className = 'blk-title';
+    t.style.cssText = `font-family: ${b.titleFont}, sans-serif; font-size: ${b.titleSize}px; color: ${b.titleColor}; line-height: ${b.lineHeight};`;
+    t.textContent = b.title;
+    parent.appendChild(t);
+  }
+  if (b.subtitle) {
+    const s = document.createElement('div');
+    s.className = 'blk-sub';
+    s.style.cssText = `font-family: ${b.subtitleFont}, monospace; font-size: ${b.subtitleSize}px; color: ${b.subtitleColor};`;
+    s.textContent = b.subtitle;
+    parent.appendChild(s);
+  }
+}
+
+function renderStage() {
+  const g = state.global;
+  VARIANTS.forEach(v => {
+    const slide = document.getElementById(`slide-${v.id}`);
+    slide.style.background = g.pageBg;
+    slide.classList.toggle('active', v.id === state.active);
+    const grid = document.getElementById(`grid-${v.id}`);
+    grid.innerHTML = '';
+    grid.style.gap = `${g.gridGap}px`;
+    grid.style.padding = `${g.gridGap + 4}px`;
+    grid.style.background = g.pageBg;
+    state.variants[v.id].forEach(b => grid.appendChild(renderBlock(b, v.id)));
+  });
+  if (cmpRoot.classList.contains('active')) refreshCompare();
+  if (focusOverlay.classList.contains('active')) renderFocus(focusOverlay.dataset.variant);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SIDEBAR
+   ════════════════════════════════════════════════════════════════ */
+
+function renderSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = '';
+
+  sb.appendChild(section('Сетка', `
+    <div class="sb-row"><span class="sb-label">Отступы</span><span class="sb-val">${state.global.gridGap} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="60" value="${state.global.gridGap}" data-g="gridGap">
+    <div class="sb-row"><span class="sb-label">Радиус</span><span class="sb-val">${state.global.radius} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="80" value="${state.global.radius}" data-g="radius">
+  `));
+
+  sb.appendChild(section('Тень', `
+    <div class="sb-row"><span class="sb-label">Интенсивность</span><span class="sb-val">${state.global.shadowIntensity} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="32" value="${state.global.shadowIntensity}" data-g="shadowIntensity">
+    <div class="sb-label" style="margin-bottom:4px;">Цвет тени</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.shadowDark};"><input type="color" value="${state.global.shadowDark}" data-g="shadowDark"></div>
+      <input class="sb-color-input" value="${state.global.shadowDark}" data-g="shadowDark">
+    </div>
+    <div class="sb-label" style="margin-bottom:4px;">Цвет блика</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.shadowLight};"><input type="color" value="${state.global.shadowLight}" data-g="shadowLight"></div>
+      <input class="sb-color-input" value="${state.global.shadowLight}" data-g="shadowLight">
+    </div>
+  `));
+
+  sb.appendChild(section('Поверхности', `
+    <div class="sb-label" style="margin-bottom:4px;">Фон страницы</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.pageBg};"><input type="color" value="${state.global.pageBg}" data-g="pageBg"></div>
+      <input class="sb-color-input" value="${state.global.pageBg}" data-g="pageBg">
+    </div>
+    <div class="sb-label" style="margin-bottom:4px;">Фон блока</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.blockBg};"><input type="color" value="${state.global.blockBg}" data-g="blockBg"></div>
+      <input class="sb-color-input" value="${state.global.blockBg}" data-g="blockBg">
+    </div>
+  `));
+
+  if (state.selected) {
+    const b = getSelectedBlock();
+    if (b) {
+      sb.appendChild(blockSection(b));
+      sb.appendChild(textSection(b));
+    }
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'sb-empty';
+    empty.innerHTML = 'Кликни на блок,<br>чтобы редактировать его<br>содержимое и размеры';
+    sb.appendChild(empty);
+  }
+
+  bindSidebarHandlers();
+}
+
+function section(title, innerHtml, hint = '') {
+  const s = document.createElement('div');
+  s.className = 'sb-section';
+  s.innerHTML = `<div class="sb-h">${title}${hint ? `<span class="sb-h-hint">${hint}</span>` : ''}</div>${innerHtml}`;
+  return s;
+}
+
+function blockSection(b) {
+  const isImage = b.type === 'image';
+  const isGrad  = b.type === 'gradient';
+
+  let gradHtml = '<div class="sb-grid">';
+  Object.entries(GRADIENTS).forEach(([k, v]) => {
+    const sel = isGrad && b.gradient === k ? ' selected' : '';
+    gradHtml += `<div class="sb-swatch${sel}" style="background:${v.css.replace('{a}', 135)};" data-grad="${k}"></div>`;
+  });
+  gradHtml += '</div>';
+
+  let angleHtml = '';
+  if (isGrad) {
+    angleHtml = `
+      <div class="sb-row"><span class="sb-label">Угол</span><span class="sb-val">${b.gradAngle}°</span></div>
+      <input type="range" class="sb-slider" min="0" max="360" value="${b.gradAngle}" data-b="gradAngle">
+    `;
+  }
+
+  let imgHtml = '<div class="sb-imggrid">';
+  Object.entries(IMAGES).forEach(([k, v]) => {
+    const sel = isImage && b.image === k ? ' selected' : '';
+    imgHtml += `<div class="sb-imgswatch${sel}" style="background-image:url('${encUrl(v.file)}');" data-img="${k}" title="${v.name}"></div>`;
+  });
+  imgHtml += '</div>';
+
+  let imageLabelHtml = '';
   if (isImage) {
-    const imgUrl = b.image && IMAGES[b.image];
-    return (
-      <div className={cls.join(' ')} style={{
-        ...baseStyle,
-        backgroundImage: imgUrl ? `url('${imgUrl}')` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      }}>
-        {b.imageLabel && <div className="img-label">{b.imageLabel}</div>}
-      </div>
-    );
+    imageLabelHtml = `
+      <div class="sb-label" style="margin-bottom:4px;">Подпись на картинке</div>
+      <input type="text" class="sb-input" value="${escapeHtml(b.imageLabel)}" data-b="imageLabel" placeholder="Например: Питч-дек · NDA">
+    `;
   }
 
-  if (isHero) {
-    return (
-      <div className={cls.join(' ')} style={baseStyle}>
-        <div className="hero-photo" />
-        {(b.title || b.subtitle) && (
-          <div className="hero-text" style={{ padding: `0 ${b.padding}px ${b.padding}px` }}>
-            <TextParts b={b} />
-          </div>
-        )}
-      </div>
-    );
-  }
+  const tabActive = (t) => t === b.type ? 'active' : '';
 
-  if (isHeroH) {
-    return (
-      <div className={cls.join(' ')} style={baseStyle}>
-        <div className="hero-photo hero-photo--h" />
-        {(b.title || b.subtitle) && (
-          <div className="hero-text hero-text--h" style={{ padding: b.padding }}>
-            <TextParts b={b} />
-          </div>
-        )}
-      </div>
-    );
-  }
+  return section('Акцент', `
+    <div class="sb-tabs">
+      <button class="sb-tab ${tabActive('plain')}" data-type="plain">Обычный</button>
+      <button class="sb-tab ${tabActive('gradient')}" data-type="gradient">Градиент</button>
+      <button class="sb-tab ${tabActive('image')}" data-type="image">Картинка</button>
+    </div>
 
-  // plain | gradient
-  const [v, h] = b.position.split('-');
-  const inner = {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: flexAxis[v] || 'center',
-    alignItems: flexAxis[h] || 'flex-start',
-    textAlign: b.align,
-    padding: b.padding,
-  };
-  return (
-    <div className={cls.join(' ')} style={baseStyle}>
-      <div style={inner}>
-        <TextParts b={b} light={isAccent} />
+    ${isGrad ? gradHtml + angleHtml : ''}
+    ${isImage ? imgHtml + imageLabelHtml : ''}
+
+    <div class="sb-h" style="margin-top:14px;">Размер и положение</div>
+
+    <div class="sb-sizerow">
+      <span class="sb-label">Ширина</span>
+      <div class="sb-sizectrl">
+        <button class="sb-iconbtn" data-act="moveLeft" ${b.col <= 1 ? 'disabled' : ''}>←</button>
+        <button class="sb-iconbtn" data-act="moveRight" ${b.col + b.cspan > 20 ? 'disabled' : ''}>→</button>
+        <span class="sb-numdisplay">${b.cspan}</span>
+        <button class="sb-iconbtn" data-act="growW" ${b.col + b.cspan > 20 ? 'disabled' : ''}>+</button>
       </div>
     </div>
-  );
+
+    <div class="sb-sizerow">
+      <span class="sb-label">Высота</span>
+      <div class="sb-sizectrl">
+        <button class="sb-iconbtn" data-act="moveUp" ${b.row <= 1 ? 'disabled' : ''}>↑</button>
+        <button class="sb-iconbtn" data-act="moveDown" ${b.row + b.rspan > 12 ? 'disabled' : ''}>↓</button>
+        <span class="sb-numdisplay">${b.rspan}</span>
+        <button class="sb-iconbtn" data-act="growH" ${b.row + b.rspan > 12 ? 'disabled' : ''}>+</button>
+      </div>
+    </div>
+
+    <div class="sb-btnrow" style="margin-top:8px;">
+      <button class="sb-iconbtn" style="height:32px;" data-act="shrinkW" ${b.cspan <= 1 ? 'disabled' : ''}>− Ширина</button>
+      <button class="sb-iconbtn" style="height:32px;" data-act="shrinkH" ${b.rspan <= 1 ? 'disabled' : ''}>− Высота</button>
+    </div>
+
+    <button class="sb-btn" data-act="splitH" style="margin-top:8px;" ${b.cspan <= 1 ? 'disabled' : ''}>Делить ↔</button>
+    <button class="sb-btn" data-act="splitV" ${b.rspan <= 1 ? 'disabled' : ''}>Делить ↕</button>
+    <button class="sb-btn sb-btn--danger" data-act="delete">Удалить блок</button>
+    <button class="sb-btn" data-act="deselect">Снять выделение</button>
+  `);
 }
 
-/* ─── Slide grid (1920×1080, 20×12, gap/pad = 30) ─── */
-const W = 1920, H = 1080, PAD = 30, GAP = 30;
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(20, 1fr)',
-  gridTemplateRows: 'repeat(12, 1fr)',
-  gap: `${GAP}px`,
-  padding: `${PAD}px`,
-  width: W,
-  height: H,
-  background: C.surface,
-};
-function Slide({ blocks }) {
-  return <div style={gridStyle}>{blocks.map(b => <Blk key={b.id} b={b} />)}</div>;
+function textSection(b) {
+  const align = b.align;
+  const pos = b.position;
+  const positions = ['top-left','top-center','top-right','center-left','center-center','center-right','bottom-left','bottom-center','bottom-right'];
+  let posGrid = '<div class="sb-posgrid">';
+  positions.forEach(p => {
+    posGrid += `<button class="sb-posdot${p === pos ? ' active' : ''}" data-pos="${p}"></button>`;
+  });
+  posGrid += '</div>';
+
+  return section('Текст', `
+    <div class="sb-label" style="margin-bottom:4px;">Заголовок</div>
+    <textarea class="sb-textarea" data-b="title" placeholder="—">${escapeHtml(b.title)}</textarea>
+    <div class="sb-label" style="margin-bottom:4px;">Подпись</div>
+    <textarea class="sb-textarea" data-b="subtitle" placeholder="—">${escapeHtml(b.subtitle)}</textarea>
+
+    <div class="sb-twocol">
+      <div>
+        <div style="margin-bottom:4px;">Шрифт заголовка</div>
+        <select class="sb-select" data-b="titleFont">
+          ${FONTS.map(f => `<option ${f === b.titleFont ? 'selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <div style="margin-bottom:4px;">Шрифт подписи</div>
+        <select class="sb-select" data-b="subtitleFont">
+          ${FONTS.map(f => `<option ${f === b.subtitleFont ? 'selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="sb-row"><span class="sb-label">Размер заголовка</span><span class="sb-val">${b.titleSize} px</span></div>
+    <input type="range" class="sb-slider" min="8" max="100" value="${b.titleSize}" data-b="titleSize">
+    <div class="sb-row"><span class="sb-label">Размер подписи</span><span class="sb-val">${b.subtitleSize} px</span></div>
+    <input type="range" class="sb-slider" min="8" max="40" value="${b.subtitleSize}" data-b="subtitleSize">
+
+    <div class="sb-label" style="margin-bottom:4px;">Цвет текста</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${b.titleColor};"><input type="color" value="${rgbaToHex(b.titleColor)}" data-b="titleColor"></div>
+      <input class="sb-color-input" value="${b.titleColor}" data-b="titleColor">
+    </div>
+
+    <div class="sb-label" style="margin-bottom:6px;">Выравнивание</div>
+    <div class="sb-aligntabs">
+      <button class="sb-aligntab ${align==='left'?'active':''}" data-align="left">${alignIcon('left')}</button>
+      <button class="sb-aligntab ${align==='center'?'active':''}" data-align="center">${alignIcon('center')}</button>
+      <button class="sb-aligntab ${align==='right'?'active':''}" data-align="right">${alignIcon('right')}</button>
+    </div>
+
+    <div class="sb-label" style="margin-bottom:6px;">Положение в блоке</div>
+    ${posGrid}
+
+    <div class="sb-row"><span class="sb-label">Отступ</span><span class="sb-val">${b.padding} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="80" value="${b.padding}" data-b="padding">
+    <div class="sb-row"><span class="sb-label">Интерлиньяж</span><span class="sb-val">${b.lineHeight.toFixed(2)}</span></div>
+    <input type="range" class="sb-slider" min="0.8" max="2" step="0.05" value="${b.lineHeight}" data-b="lineHeight">
+  `);
 }
 
-/* ─── App ─── */
-function App() {
-  return (
-    <DesignCanvas>
-      <DCSection
-        id="bento"
-        title="Валерий Рыжов · Бенто-варианты"
-        subtitle="Три раскладки одной презентации · 1920×1080 · 20×12 · IBM Plex"
-      >
-        <DCArtboard id="v1" label="V1 — Classic"          width={W} height={H}>
-          <Slide blocks={V1} />
-        </DCArtboard>
-        <DCArtboard id="v2" label="V2 — Manifest First"   width={W} height={H}>
-          <Slide blocks={V2} />
-        </DCArtboard>
-        <DCArtboard id="v3" label="V3 — Portfolio Heavy"  width={W} height={H}>
-          <Slide blocks={V3} />
-        </DCArtboard>
-      </DCSection>
-    </DesignCanvas>
-  );
+function alignIcon(type) {
+  const lines = {
+    left:   '<line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="7" x2="10" y2="7"/><line x1="2" y1="11" x2="13" y2="11"/>',
+    center: '<line x1="3" y1="3" x2="13" y2="3"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="2" y1="11" x2="14" y2="11"/>',
+    right:  '<line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="7" x2="14" y2="7"/><line x1="3" y1="11" x2="14" y2="11"/>',
+  };
+  return `<svg viewBox="0 0 16 14" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round">${lines[type]}</svg>`;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function rgbaToHex(c) {
+  if (c.startsWith('#')) return c;
+  const m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return '#000000';
+  const h = (n) => parseInt(n).toString(16).padStart(2, '0');
+  return `#${h(m[1])}${h(m[2])}${h(m[3])}`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   EVENTS
+   ════════════════════════════════════════════════════════════════ */
+
+function bindSidebarHandlers() {
+  document.querySelectorAll('[data-g]').forEach(el => {
+    const key = el.dataset.g;
+    const handler = () => {
+      let v = el.value;
+      if (el.type === 'range') v = +v;
+      state.global[key] = v;
+      document.querySelectorAll(`[data-g="${key}"]`).forEach(other => {
+        if (other !== el) other.value = v;
+      });
+      const swatch = document.querySelector(`.sb-color-swatch input[data-g="${key}"]`);
+      if (swatch) swatch.parentElement.style.background = v;
+      renderStage();
+      updateGlobalReadouts();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+
+  document.querySelectorAll('[data-b]').forEach(el => {
+    const key = el.dataset.b;
+    const handler = () => {
+      const b = getSelectedBlock(); if (!b) return;
+      let v = el.value;
+      if (el.type === 'range') v = +v;
+      if (key === 'lineHeight') v = +v;
+      b[key] = v;
+      document.querySelectorAll(`[data-b="${key}"]`).forEach(other => {
+        if (other !== el && other.value !== el.value) other.value = el.value;
+      });
+      const swatch = document.querySelector(`.sb-color-swatch input[data-b="${key}"]`);
+      if (swatch) swatch.parentElement.style.background = el.value;
+      renderStage();
+      updateBlockReadouts();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+
+  document.querySelectorAll('[data-type]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      const t = el.dataset.type;
+      b.type = t;
+      if (t === 'plain')    { b.gradient = null; b.image = null; }
+      if (t === 'gradient' && !b.gradient) b.gradient = 'deepBlue';
+      if (t === 'image' && !b.image) b.image = 'banking';
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-grad]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.type = 'gradient';
+      b.gradient = el.dataset.grad;
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-img]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.type = 'image';
+      b.image = el.dataset.img;
+      if (!b.imageLabel && IMAGES[b.image]) b.imageLabel = IMAGES[b.image].name;
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-align]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.align = el.dataset.align;
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-pos]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.position = el.dataset.pos;
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll('[data-act]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      const a = el.dataset.act;
+      if (a === 'moveLeft' && b.col > 1) b.col--;
+      if (a === 'moveRight' && b.col + b.cspan <= 20) b.col++;
+      if (a === 'moveUp' && b.row > 1) b.row--;
+      if (a === 'moveDown' && b.row + b.rspan <= 12) b.row++;
+      if (a === 'growW' && b.col + b.cspan <= 20) b.cspan++;
+      if (a === 'growH' && b.row + b.rspan <= 12) b.rspan++;
+      if (a === 'shrinkW' && b.cspan > 1) b.cspan--;
+      if (a === 'shrinkH' && b.rspan > 1) b.rspan--;
+      if (a === 'delete') {
+        const v = state.selected.variant;
+        state.variants[v] = state.variants[v].filter(x => x.id !== b.id);
+        state.selected = null;
+      }
+      if (a === 'deselect') state.selected = null;
+      if (a === 'splitH' && b.cspan > 1) {
+        const half = Math.floor(b.cspan / 2);
+        const nb = { ...b, id: newId(), col: b.col + half, cspan: b.cspan - half, title: '', subtitle: '', image: null, imageLabel: '' };
+        b.cspan = half;
+        state.variants[state.selected.variant].push(nb);
+      }
+      if (a === 'splitV' && b.rspan > 1) {
+        const half = Math.floor(b.rspan / 2);
+        const nb = { ...b, id: newId(), row: b.row + half, rspan: b.rspan - half, title: '', subtitle: '', image: null, imageLabel: '' };
+        b.rspan = half;
+        state.variants[state.selected.variant].push(nb);
+      }
+      renderAll();
+    });
+  });
+}
+
+function updateGlobalReadouts() {
+  document.querySelectorAll('.sb-section').forEach(sec => {
+    sec.querySelectorAll('input[data-g]').forEach(el => {
+      if (el.type === 'range') {
+        const valEl = el.previousElementSibling?.querySelector('.sb-val');
+        if (valEl) {
+          const key = el.dataset.g;
+          const unit = (key === 'gridGap' || key === 'radius' || key === 'shadowIntensity') ? ' px' : '';
+          valEl.textContent = el.value + unit;
+        }
+      }
+    });
+  });
+}
+
+function updateBlockReadouts() {
+  document.querySelectorAll('input[data-b]').forEach(el => {
+    if (el.type === 'range') {
+      const valEl = el.previousElementSibling?.querySelector('.sb-val');
+      if (valEl) {
+        const key = el.dataset.b;
+        let unit = ' px';
+        if (key === 'lineHeight') unit = '';
+        if (key === 'gradAngle') unit = '°';
+        let v = el.value;
+        if (key === 'lineHeight') v = (+v).toFixed(2);
+        valEl.textContent = v + unit;
+      }
+    }
+  });
+}
+
+function renderAll() {
+  renderSidebar();
+  renderStage();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SELECTION
+   ════════════════════════════════════════════════════════════════ */
+
+function getSelectedBlock() {
+  if (!state.selected) return null;
+  const v = state.variants[state.selected.variant];
+  return v.find(b => b.id === state.selected.blockId);
+}
+
+function selectBlock(variant, blockId) {
+  state.selected = { variant, blockId };
+  renderAll();
+}
+
+function deselect() {
+  state.selected = null;
+  renderAll();
+}
+
+document.getElementById('stage-wrap').addEventListener('click', (e) => {
+  if (!e.target.closest('.blk')) deselect();
+});
+
+/* ════════════════════════════════════════════════════════════════
+   COMPARE MODE
+   ════════════════════════════════════════════════════════════════ */
+
+const cmpRoot   = document.getElementById('compare-root');
+const cmpCanvas = cmpRoot.querySelector('.cmp-canvas');
+const stageWrap = document.getElementById('stage-wrap');
+const sidebar   = document.getElementById('sidebar');
+
+let cmpTf = { x: 0, y: 0, scale: 1 };
+function applyCmpTf() {
+  cmpCanvas.style.transform = `translate3d(${cmpTf.x}px, ${cmpTf.y}px, 0) scale(${cmpTf.scale})`;
+}
+
+function refreshCompare() {
+  const g = state.global;
+  VARIANTS.forEach(v => {
+    const ab = cmpRoot.querySelector(`.cmp-artboard[data-variant="${v.id}"]`);
+    const grid = ab.querySelector('.grid');
+    grid.innerHTML = '';
+    grid.style.gap = `${g.gridGap}px`;
+    grid.style.padding = `${g.gridGap + 4}px`;
+    grid.style.background = g.pageBg;
+    state.variants[v.id].forEach(b => grid.appendChild(renderBlock(b, v.id)));
+  });
+}
+
+function fitCompareInitial() {
+  const totalW = 1920 * 3 + 100 * 2 + 80 * 2;
+  const totalH = 1080 + 18 + 16 + 80 * 2;
+  const w = cmpRoot.clientWidth;
+  const h = cmpRoot.clientHeight;
+  const scale = Math.min(w / totalW, h / totalH) * 0.92;
+  cmpTf.scale = scale;
+  cmpTf.x = (w - totalW * scale) / 2;
+  cmpTf.y = (h - totalH * scale) / 2;
+  applyCmpTf();
+}
+
+function enterCompare() {
+  stageWrap.classList.add('hidden');
+  sidebar.classList.add('hidden');
+  cmpRoot.classList.add('active');
+  refreshCompare();
+  fitCompareInitial();
+}
+
+function exitCompare() {
+  cmpRoot.classList.remove('active');
+  stageWrap.classList.remove('hidden');
+  sidebar.classList.remove('hidden');
+}
+
+function setupCompareCanvas() {
+  cmpRoot.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = cmpRoot.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const isMouseWheel = e.deltaMode !== 0 ||
+      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
+    let factor = null;
+    if (e.ctrlKey) factor = Math.exp(-e.deltaY * 0.01);
+    else if (isMouseWheel) factor = Math.exp(-Math.sign(e.deltaY) * 0.18);
+    if (factor != null) {
+      const next = Math.max(0.05, Math.min(4, cmpTf.scale * factor));
+      const k = next / cmpTf.scale;
+      cmpTf.x = px - (px - cmpTf.x) * k;
+      cmpTf.y = py - (py - cmpTf.y) * k;
+      cmpTf.scale = next;
+      applyCmpTf();
+    } else {
+      cmpTf.x -= e.deltaX;
+      cmpTf.y -= e.deltaY;
+      applyCmpTf();
+    }
+  }, { passive: false });
+
+  let drag = null;
+  let suppressClick = false;
+  cmpRoot.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    const onArtboard = !!e.target.closest('.cmp-artboard');
+    drag = {
+      id: e.pointerId,
+      lx: e.clientX, ly: e.clientY,
+      sx: e.clientX, sy: e.clientY,
+      panning: !onArtboard
+    };
+    if (drag.panning) {
+      e.preventDefault();
+      cmpRoot.setPointerCapture(e.pointerId);
+      cmpRoot.classList.add('dragging');
+    }
+  });
+  cmpRoot.addEventListener('pointermove', (e) => {
+    if (!drag || drag.id !== e.pointerId) return;
+    if (!drag.panning) {
+      if (Math.abs(e.clientX - drag.sx) > 4 || Math.abs(e.clientY - drag.sy) > 4) {
+        drag.panning = true;
+        cmpRoot.setPointerCapture(e.pointerId);
+        cmpRoot.classList.add('dragging');
+        suppressClick = true;
+      } else return;
+    }
+    cmpTf.x += e.clientX - drag.lx;
+    cmpTf.y += e.clientY - drag.ly;
+    drag.lx = e.clientX; drag.ly = e.clientY;
+    applyCmpTf();
+  });
+  cmpRoot.addEventListener('pointerup', (e) => {
+    if (!drag || drag.id !== e.pointerId) return;
+    if (cmpRoot.hasPointerCapture(e.pointerId)) cmpRoot.releasePointerCapture(e.pointerId);
+    drag = null;
+    cmpRoot.classList.remove('dragging');
+  });
+  cmpRoot.addEventListener('click', (e) => {
+    if (suppressClick) { suppressClick = false; return; }
+    const ab = e.target.closest('.cmp-artboard');
+    if (ab) enterFocus(ab.dataset.variant);
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FOCUS OVERLAY
+   ════════════════════════════════════════════════════════════════ */
+
+const focusOverlay = document.getElementById('focus-overlay');
+
+function enterFocus(variantId) {
+  focusOverlay.classList.add('active');
+  renderFocus(variantId);
+}
+function exitFocus() {
+  focusOverlay.classList.remove('active');
+  delete focusOverlay.dataset.variant;
+}
+
+function renderFocus(variantId) {
+  focusOverlay.dataset.variant = variantId;
+  const stage = focusOverlay.querySelector('.focus-stage');
+  const grid  = stage.querySelector('.grid');
+  const g = state.global;
+
+  grid.innerHTML = '';
+  grid.style.gap = `${g.gridGap}px`;
+  grid.style.padding = `${g.gridGap + 4}px`;
+  grid.style.background = g.pageBg;
+  state.variants[variantId].forEach(b => grid.appendChild(renderBlock(b, variantId)));
+
+  const vw = window.innerWidth - 200;
+  const vh = window.innerHeight - 240;
+  const scale = Math.min(vw / 1920, vh / 1080, 1);
+  stage.style.width  = (1920 * scale) + 'px';
+  stage.style.height = (1080 * scale) + 'px';
+  grid.style.transform = `scale(${scale})`;
+
+  const variant = VARIANTS.find(v => v.id === variantId);
+  const idx = VARIANTS.findIndex(v => v.id === variantId);
+  focusOverlay.querySelector('.focus-label').innerHTML =
+    `${variant.name}<span class="num">${idx + 1} / ${VARIANTS.length}</span>`;
+
+  const dots = focusOverlay.querySelector('.focus-dots');
+  dots.innerHTML = '';
+  VARIANTS.forEach(v => {
+    const dot = document.createElement('button');
+    dot.className = 'focus-dot' + (v.id === variantId ? ' active' : '');
+    dot.addEventListener('click', (e) => { e.stopPropagation(); renderFocus(v.id); });
+    dots.appendChild(dot);
+  });
+}
+
+focusOverlay.addEventListener('click', (e) => {
+  if (e.target === focusOverlay) exitFocus();
+});
+focusOverlay.querySelector('.focus-close').addEventListener('click', (e) => {
+  e.stopPropagation(); exitFocus();
+});
+focusOverlay.querySelector('.focus-arrow.left').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const cur = focusOverlay.dataset.variant;
+  const idx = VARIANTS.findIndex(v => v.id === cur);
+  renderFocus(VARIANTS[(idx - 1 + VARIANTS.length) % VARIANTS.length].id);
+});
+focusOverlay.querySelector('.focus-arrow.right').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const cur = focusOverlay.dataset.variant;
+  const idx = VARIANTS.findIndex(v => v.id === cur);
+  renderFocus(VARIANTS[(idx + 1) % VARIANTS.length].id);
+});
+
+/* ════════════════════════════════════════════════════════════════
+   TAB SWITCHING + KEYBOARD
+   ════════════════════════════════════════════════════════════════ */
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const tab = t.dataset.tab;
+    if (tab === 'compare') {
+      state.selected = null;
+      enterCompare();
+    } else {
+      exitCompare();
+      state.active = tab;
+      state.selected = null;
+      renderAll();
+    }
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (document.activeElement && (
+    document.activeElement.tagName === 'INPUT' ||
+    document.activeElement.tagName === 'TEXTAREA' ||
+    document.activeElement.isContentEditable)) return;
+
+  if (focusOverlay.classList.contains('active')) {
+    if (e.key === 'Escape')     { exitFocus(); return; }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); focusOverlay.querySelector('.focus-arrow.left').click(); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); focusOverlay.querySelector('.focus-arrow.right').click(); return; }
+    return;
+  }
+
+  if (e.key === '1') document.querySelector('[data-tab="v1"]').click();
+  if (e.key === '2') document.querySelector('[data-tab="v2"]').click();
+  if (e.key === '3') document.querySelector('[data-tab="v3"]').click();
+  if (e.key === '4') document.querySelector('[data-tab="compare"]').click();
+  if (e.key === 'Escape') {
+    if (cmpRoot.classList.contains('active')) {
+      document.querySelector('[data-tab="v1"]').click();
+    } else {
+      deselect();
+    }
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════
+   STAGE FIT
+   ════════════════════════════════════════════════════════════════ */
+
+const stageWrapEl = document.getElementById('stage-wrap');
+function fit() {
+  const w = stageWrapEl.clientWidth;
+  const h = stageWrapEl.clientHeight;
+  const scale = Math.min(w / 1920, h / 1080);
+  document.querySelectorAll('.slide').forEach(s => {
+    s.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  });
+  if (cmpRoot.classList.contains('active')) fitCompareInitial();
+  if (focusOverlay.classList.contains('active')) renderFocus(focusOverlay.dataset.variant);
+}
+window.addEventListener('resize', fit);
+
+/* ════════════════════════════════════════════════════════════════
+   EXPORT / RESET
+   ════════════════════════════════════════════════════════════════ */
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!confirm('Сбросить все изменения и вернуться к исходным трём вариантам?')) return;
+  nextBlockId = 0;
+  state = initialState();
+  renderAll();
+  showToast('Сброшено');
+});
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  const html = exportActiveVariant();
+  downloadFile(`bento-${state.active}.html`, html);
+  showToast(`Экспорт: bento-${state.active}.html`);
+});
+
+function exportActiveVariant() {
+  const g = state.global;
+  const blocks = state.variants[state.active];
+  let blocksHtml = '';
+  blocks.forEach(b => {
+    const isAccent = b.type === 'gradient';
+    const isImage  = b.type === 'image';
+    const isHero   = b.type === 'hero';
+    const isHeroH  = b.type === 'heroh';
+
+    let bg = isImage ? g.blockBg : getBlockBg(b, g);
+    let extraStyle = '';
+    if (isImage && b.image && IMAGES[b.image]) {
+      extraStyle = `background-image: url('${encUrl(IMAGES[b.image].file)}'); background-size: cover; background-position: center;`;
+    }
+    const shadow = isAccent ? shadowAccentCss(g) : shadowCss(g);
+    const cls = ['blk'];
+    if (isAccent) cls.push('blk--accent');
+    if (isImage)  cls.push('blk--image');
+
+    let inner = '';
+    if (isImage) {
+      if (b.imageLabel) inner = `<div class="img-label">${escapeHtml(b.imageLabel)}</div>`;
+    } else if (isHero) {
+      inner = `<div class="hero-photo"></div>`;
+      if (b.title || b.subtitle) {
+        inner += `<div class="hero-text" style="padding:0 ${b.padding}px ${b.padding}px;">`;
+        if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
+        if (b.subtitle) inner += `<div class="blk-sub" style="font-family:${b.subtitleFont},monospace;font-size:${b.subtitleSize}px;color:${b.subtitleColor};">${escapeHtml(b.subtitle).replace(/\n/g,'<br>')}</div>`;
+        inner += `</div>`;
+      }
+    } else if (isHeroH) {
+      inner = `<div class="hero-photo"></div>`;
+      if (b.title || b.subtitle) {
+        inner += `<div class="hero-text" style="padding:${b.padding}px;">`;
+        if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
+        if (b.subtitle) inner += `<div class="blk-sub" style="font-family:${b.subtitleFont},monospace;font-size:${b.subtitleSize}px;color:${b.subtitleColor};">${escapeHtml(b.subtitle).replace(/\n/g,'<br>')}</div>`;
+        inner += `</div>`;
+      }
+    } else {
+      inner = `<div class="blk-inner" style="padding:${b.padding}px;${positionStyle(b.position)}text-align:${b.align};">`;
+      if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
+      if (b.subtitle) inner += `<div class="blk-sub" style="font-family:${b.subtitleFont},monospace;font-size:${b.subtitleSize}px;color:${b.subtitleColor};">${escapeHtml(b.subtitle).replace(/\n/g,'<br>')}</div>`;
+      inner += `</div>`;
+    }
+
+    const heroClass  = isHero  ? ' blk--hero'  : '';
+    const heroHClass = isHeroH ? ' blk--heroh' : '';
+
+    blocksHtml += `<div class="${cls.join(' ')}${heroClass}${heroHClass}" style="grid-column:${b.col}/span ${b.cspan};grid-row:${b.row}/span ${b.rspan};background:${bg};${extraStyle}border-radius:${g.radius}px;box-shadow:${shadow};${b.borderWidth?'border:'+b.borderWidth+'px solid '+b.borderColor+';':''}">${inner}</div>`;
+  });
+
+  return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Бенто-слайд</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden}body{background:#e8e8eb;font-family:'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center}.stage{position:absolute;width:1920px;height:1080px;top:50%;left:50%;transform-origin:center;background:${g.pageBg};display:flex}.grid{display:grid;grid-template-columns:repeat(20,1fr);grid-template-rows:repeat(12,1fr);gap:${g.gridGap}px;padding:${g.gridGap+4}px;width:100%;height:100%;background:${g.pageBg}}.blk{display:flex;flex-direction:column;overflow:hidden;position:relative;-webkit-corner-shape:squircle;corner-shape:squircle}.blk--accent{color:rgba(255,255,255,.95)}.blk-inner{flex:1;display:flex;flex-direction:column;overflow:hidden}.blk-title{font-weight:700;line-height:1;letter-spacing:-.025em;white-space:pre-wrap}.blk-sub{margin-top:8px;line-height:1.35;letter-spacing:.01em;white-space:pre-wrap}.blk--hero{padding:0}.blk--hero .hero-photo{flex:1;background-image:url('Val-photo.jpg');background-size:cover;background-position:center 22%;-webkit-mask-image:linear-gradient(to bottom,black 65%,transparent 100%);mask-image:linear-gradient(to bottom,black 65%,transparent 100%)}.blk--hero .hero-text{margin-top:-36px;z-index:2;position:relative}.blk--heroh{padding:0;flex-direction:row}.blk--heroh .hero-photo{width:48%;background-image:url('Val-photo.jpg');background-size:cover;background-position:center 22%;-webkit-mask-image:linear-gradient(to right,black 75%,transparent 100%);mask-image:linear-gradient(to right,black 75%,transparent 100%)}.blk--heroh .hero-text{flex:1;display:flex;flex-direction:column;justify-content:center;margin-left:-28px;z-index:2}.img-label{position:absolute;bottom:16px;left:16px;right:16px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:9px 14px;border-radius:100px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;color:#1E1C1A;text-align:center;z-index:5}</style></head><body><div class="stage" id="s"><div class="grid">${blocksHtml}</div></div><script>function fit(){var w=innerWidth,h=innerHeight,s=Math.min(w/1920,h/1080);document.getElementById('s').style.transform='translate(-50%,-50%) scale('+s+')'}fit();onresize=fit;<\/script></body></html>`;
+}
+
+function downloadFile(name, content) {
+  const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   INIT
+   ════════════════════════════════════════════════════════════════ */
+
+setupCompareCanvas();
+renderAll();
+fit();
+if (document.fonts) document.fonts.ready.then(fit);
 </script>
+
 </body>
 </html>
