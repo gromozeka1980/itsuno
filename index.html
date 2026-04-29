@@ -2398,11 +2398,85 @@ function updateHistoryButtons() {
   if (r) r.disabled = historyIdx >= history.length - 1;
 }
 
-// commit() = push current state to history (and later, persist).
+// commit() = push current state to history + schedule persistence.
 // Call after any state-mutating action that should be Ctrl+Z'able.
 function commit() {
   pushHistory();
-  if (typeof scheduleSave === 'function') scheduleSave();
+  scheduleSave();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   LOCAL STORAGE (autosave + autoload)
+   ════════════════════════════════════════════════════════════════ */
+
+const LS_STATE = 'itsuno-state-v1';
+const LS_UPLOADS = 'itsuno-uploads-v1';
+
+let _saveTimer = null;
+function scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveState, 250);
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(LS_STATE, JSON.stringify({
+      global: state.global,
+      variants: state.variants,
+      variantOrder: state.variantOrder,
+      variantNames: state.variantNames,
+      active: state.active,
+      nextBlockId,
+      nextVariantId,
+    }));
+
+    // Save user-uploaded images (data URLs) separately to keep the
+    // primary state payload lean.
+    const uploads = {};
+    Object.entries(IMAGES).forEach(([k, v]) => {
+      if (k.startsWith('upload_')) uploads[k] = v;
+    });
+    localStorage.setItem(LS_UPLOADS, JSON.stringify(uploads));
+  } catch (e) {
+    if (e && (e.name === 'QuotaExceededError' || /quota/i.test(String(e)))) {
+      showToast('Не хватает места в браузере — удали часть загруженных картинок');
+    } else {
+      console.warn('saveState failed', e);
+    }
+  }
+}
+
+function loadState() {
+  try {
+    // Uploads first so blocks can reference them on render
+    const upJson = localStorage.getItem(LS_UPLOADS);
+    if (upJson) {
+      const uploads = JSON.parse(upJson) || {};
+      Object.entries(uploads).forEach(([k, v]) => {
+        IMAGES[k] = v;
+        const num = parseInt(String(k).replace('upload_', ''), 10);
+        if (!Number.isNaN(num) && num > uploadCounter) uploadCounter = num;
+      });
+    }
+
+    const stateJson = localStorage.getItem(LS_STATE);
+    if (!stateJson) return false;
+    const saved = JSON.parse(stateJson);
+    if (!saved || !saved.variants || !saved.variantOrder) return false;
+
+    state.global = saved.global || state.global;
+    state.variants = saved.variants;
+    state.variantOrder = saved.variantOrder;
+    state.variantNames = saved.variantNames || {};
+    state.active = state.variantOrder.includes(saved.active) ? saved.active : state.variantOrder[0];
+    state.selected = null;
+    if (saved.nextBlockId) nextBlockId = Math.max(nextBlockId, saved.nextBlockId);
+    if (saved.nextVariantId) nextVariantId = Math.max(nextVariantId, saved.nextVariantId);
+    return true;
+  } catch (e) {
+    console.warn('loadState failed', e);
+    return false;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -2907,7 +2981,7 @@ document.getElementById('btn-newblock').addEventListener('click', () => {
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
-  if (!confirm('Сбросить все изменения и вернуться к исходным трём вариантам?')) return;
+  if (!confirm('Сбросить все изменения и вернуться к исходным трём вариантам?\nЗагруженные картинки сохранятся.')) return;
   nextBlockId = 0;
   nextVariantId = 4;
   state = initialState();
@@ -2917,6 +2991,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   ensureCompareArtboards();
   history = [];
   historyIdx = -1;
+  localStorage.removeItem(LS_STATE);
   renderAll();
   renderTabs();
   pushHistory();
@@ -3023,6 +3098,7 @@ function showToast(msg) {
    INIT
    ════════════════════════════════════════════════════════════════ */
 
+loadState();
 syncVariants();
 ensureSlides();
 ensureCompareArtboards();
