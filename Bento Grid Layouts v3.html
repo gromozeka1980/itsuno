@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bento Grid Layouts — v3 (20×12)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: #f0f0f3;
+    color: #1E1C1A;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .blk {
+    border-radius: 60px;
+    corner-shape: squircle;
+    -webkit-corner-shape: squircle;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    user-select: none;
+    /* Neumorphic — light from top-left, shadow bottom-right */
+    box-shadow:
+      -8px -8px 16px rgba(255, 255, 255, 1),
+      8px 8px 16px rgba(0, 0, 0, 0.10);
+  }
+  /* Accent (gradient) blocks: keep softer cast shadow only, no inner highlight */
+  .blk--accent {
+    box-shadow:
+      8px 8px 18px rgba(0, 0, 0, 0.12);
+  }
+  .lbl-dark  { color: rgba(30, 28, 26, 0.55); }
+  .lbl-light { color: rgba(255, 255, 255, 0.75); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+/* ─── Tokens ─── */
+const C = {
+  ink:      '#1E1C1A',
+  surface:  '#f0f0f3',
+  surface2: '#FFFFFF',
+  surface3: '#EAE7E4',
+  surface4: '#D3CFCC',
+};
+const G = {
+  deepBlue:  'linear-gradient(135deg, #0961F2, #0241C8)',
+  mint:      'linear-gradient(135deg, #03FF8C, #5CF0F7)',
+  raspberry: 'linear-gradient(135deg, #FE1E7A, #F89530)',
+  skyBlue:   'linear-gradient(135deg, #0567FF, #5BE7FF)',
+  yellow:    'linear-gradient(135deg, #FF9B19, #FFF358)',
+  darkTeal:  'linear-gradient(135deg, #3F3369, #32A790)',
+  lavender:  'linear-gradient(135deg, #6E70FF, #EFA9FF)',
+};
+
+/* ─── Block ─── */
+function Blk({ label, fill, dark, col, row, cspan, rspan, kind }) {
+  const isLightLabel = dark || kind === 'gradient';
+  const accentCls = kind === 'gradient' ? ' blk--accent' : '';
+  return (
+    <div className={`blk ${isLightLabel ? 'lbl-light' : 'lbl-dark'}${accentCls}`} style={{
+      background: fill,
+      gridColumn: `${col} / span ${cspan}`,
+      gridRow: `${row} / span ${rspan}`,
+    }}>
+      <span style={{display:'flex', flexDirection:'column', alignItems:'center', gap:4, textAlign:'center'}}>
+        <span style={{fontSize: 26, fontWeight: 600}}>{label}</span>
+        <span style={{fontSize: 13, opacity: 0.7}}>{cspan}×{rspan}</span>
+      </span>
+    </div>
+  );
+}
+
+/* ─── Grid spec ───
+   1920×1080, margin 16, gutter 16, 20 cols × 12 rows
+   Col-area widths: 6 / 8 / 6  (cols 1–6 / 7–14 / 15–20)
+*/
+const W = 1920, H = 1080;
+const PAD = 30, GAP = 30;
+
+const grid = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(20, 1fr)',
+  gridTemplateRows: 'repeat(12, 1fr)',
+  gap: `${GAP}px`,
+  padding: `${PAD}px`,
+  width: W,
+  height: H,
+  background: C.surface,
+};
+
+function Layout() {
+  return (
+    <div style={grid}>
+      {/* ═══ COLUMN 1 (cols 1–6) ═══ */}
+      {/* Row 1: 4×4 + 2×4 */}
+      <Blk label="A1" fill={C.surface2} col={1} row={1} cspan={4} rspan={4} />
+      <Blk label="A2" fill={G.mint}  kind="gradient" col={5} row={1} cspan={2} rspan={4} />
+      {/* Row 5: 6×5 bento split (4×5 + 2×5, like ref hero pair) */}
+      <Blk label="B1" fill={C.surface2} col={1} row={5} cspan={4} rspan={5} />
+      <Blk label="B2" fill={G.raspberry} kind="gradient" col={5} row={5} cspan={2} rspan={5} />
+      {/* Row 10: 6×3 */}
+      <Blk label="C"  fill={C.surface2} col={1} row={10} cspan={6} rspan={3} />
+
+      {/* ═══ COLUMN 2 (cols 7–14) ═══ */}
+      {/* Row 1: 5×4 photo + 3×4 info  (5+3 = 8 to fill the 8-wide column) */}
+      <Blk label="D — photo" fill={C.surface2} col={7} row={1} cspan={5} rspan={4} />
+      <Blk label="E — name/info" fill={C.surface2} col={12} row={1} cspan={3} rspan={4} />
+      {/* Row 5: 8×4 blue mission */}
+      <Blk label="F — mission" fill={G.deepBlue} kind="gradient" col={7} row={5} cspan={8} rspan={4} />
+      {/* Row 9: 4×4 + two stacked 4×2 */}
+      <Blk label="G"  fill={C.surface2} col={7} row={9} cspan={4} rspan={4} />
+      <Blk label="H"  fill={C.surface2} col={11} row={9} cspan={4} rspan={2} />
+      <Blk label="I"  fill={C.surface2} col={11} row={11} cspan={4} rspan={2} />
+
+      {/* ═══ COLUMN 3 (cols 15–20) ═══ */}
+      {/* Row 1: two 3×3 side by side */}
+      <Blk label="J" fill={C.surface2} col={15} row={1} cspan={3} rspan={3} />
+      <Blk label="K" fill={C.surface2} col={18} row={1} cspan={3} rspan={3} />
+      {/* Row 4: 4×3 + 2×3 */}
+      <Blk label="L" fill={C.surface2} col={15} row={4} cspan={4} rspan={3} />
+      <Blk label="M" fill={G.skyBlue} kind="gradient" col={19} row={4} cspan={2} rspan={3} />
+      {/* Row 7: 6×2 */}
+      <Blk label="N" fill={C.surface2} col={15} row={7} cspan={6} rspan={2} />
+      {/* Row 9: 6×4 */}
+      <Blk label="O" fill={C.surface2} col={15} row={9} cspan={6} rspan={4} />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas title="Bento Grid v3 — 1920×1080 · 20×12 · 16/16">
+      <DCSection id="layouts" title="Spec'd grid: 6 / 8 / 6 column widths · squircle corners">
+        <DCArtboard id="v3" label="Spec layout" width={W} height={H}>
+          <Layout />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

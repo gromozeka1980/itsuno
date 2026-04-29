@@ -1,0 +1,1756 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Валерий Рыжов — Бенто-редактор</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  :root {
+    --ink: #1E1C1A;
+    --ink-soft: rgba(30, 28, 26, 0.6);
+    --ink-mute: rgba(30, 28, 26, 0.45);
+    --ink-faint: rgba(30, 28, 26, 0.3);
+    --line: rgba(0, 0, 0, 0.08);
+    --line-strong: rgba(0, 0, 0, 0.12);
+    --sb-bg: #fafafa;
+    --sb-section: #f3f3f5;
+  }
+  
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: #e8e8eb;
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+  }
+  
+  /* ════════════════════════════════════════════════
+     TOP NAV
+     ════════════════════════════════════════════════ */
+  .topnav {
+    flex-shrink: 0;
+    height: 52px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    z-index: 100;
+  }
+  
+  .topnav-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  
+  .topnav-title small {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 400;
+    color: var(--ink-mute);
+    font-size: 11px;
+    margin-left: 10px;
+  }
+  
+  .topnav-spacer { flex: 1; }
+  
+  .tabs {
+    display: flex;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.04);
+    padding: 3px;
+    border-radius: 100px;
+  }
+  
+  .tab {
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  
+  .tab:hover { color: var(--ink); }
+  .tab.active {
+    background: var(--ink);
+    color: #fff;
+  }
+  
+  .topnav-btn {
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    color: var(--ink);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .topnav-btn:hover { background: rgba(0, 0, 0, 0.04); }
+  .topnav-btn--primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .topnav-btn--primary:hover { background: #000; }
+  
+  /* ════════════════════════════════════════════════
+     LAYOUT
+     ════════════════════════════════════════════════ */
+  .layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  
+  /* ════════════════════════════════════════════════
+     SIDEBAR (EDITOR)
+     ════════════════════════════════════════════════ */
+  .sidebar {
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--sb-bg);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 0;
+  }
+  
+  .sb-section {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  
+  .sb-h {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sb-h-hint {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ink-faint);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  
+  .sb-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    gap: 10px;
+  }
+  
+  .sb-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  
+  .sb-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  
+  .sb-slider {
+    width: 100%;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    margin: 4px 0 14px;
+    cursor: pointer;
+  }
+  .sb-slider::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+  }
+  .sb-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+  }
+  
+  .sb-color {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .sb-color-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .sb-color-swatch input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .sb-color-input {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink);
+    background: #fff;
+    text-transform: uppercase;
+  }
+  
+  /* Tabs in sidebar (Plain/Gradient/Image) */
+  .sb-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background: var(--sb-section);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 14px;
+  }
+  .sb-tab {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sb-tab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  
+  /* Gradient/Image grid */
+  .sb-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sb-swatch {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s;
+    background-size: cover;
+    background-position: center;
+  }
+  .sb-swatch:hover { transform: scale(1.06); }
+  .sb-swatch.selected {
+    border-color: var(--ink);
+  }
+  
+  .sb-imggrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .sb-imgswatch {
+    aspect-ratio: 16 / 10;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s;
+    background-size: cover;
+    background-position: center;
+  }
+  .sb-imgswatch:hover { transform: scale(1.04); }
+  .sb-imgswatch.selected { border-color: var(--ink); }
+  
+  /* Block size controls */
+  .sb-sizerow {
+    display: grid;
+    grid-template-columns: 60px 1fr;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .sb-sizectrl {
+    display: grid;
+    grid-template-columns: 28px 28px 1fr 28px;
+    gap: 4px;
+    align-items: center;
+  }
+  .sb-iconbtn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: var(--ink);
+    font-family: inherit;
+    padding: 0;
+    transition: background 0.15s;
+  }
+  .sb-iconbtn:hover { background: rgba(0, 0, 0, 0.04); }
+  .sb-iconbtn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .sb-numdisplay {
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  
+  /* Action buttons */
+  .sb-btn {
+    width: 100%;
+    padding: 9px 12px;
+    background: #fff;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 8px;
+  }
+  .sb-btn:hover { background: rgba(0, 0, 0, 0.04); }
+  .sb-btn--danger { color: #d92d20; }
+  .sb-btn--danger:hover { background: rgba(217, 45, 32, 0.06); }
+  .sb-btn--primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .sb-btn--primary:hover { background: #000; }
+  
+  .sb-btnrow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .sb-btnrow .sb-btn { margin-bottom: 0; }
+  
+  /* Text controls */
+  .sb-input, .sb-textarea {
+    width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: #fff;
+    margin-bottom: 12px;
+    resize: vertical;
+  }
+  .sb-textarea { min-height: 50px; }
+  .sb-input:focus, .sb-textarea:focus {
+    outline: none;
+    border-color: var(--ink);
+  }
+  
+  .sb-select {
+    width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: #fff;
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+  
+  .sb-twocol {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .sb-twocol > div { font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+  
+  .sb-aligntabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background: var(--sb-section);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 12px;
+  }
+  .sb-aligntab {
+    padding: 7px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-soft);
+  }
+  .sb-aligntab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .sb-aligntab svg { width: 14px; height: 14px; }
+  
+  /* 9-dot position grid */
+  .sb-posgrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 80px;
+    height: 80px;
+    background: var(--sb-section);
+    border-radius: 8px;
+    padding: 6px;
+    gap: 2px;
+    margin-bottom: 14px;
+  }
+  .sb-posdot {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .sb-posdot::after {
+    content: '';
+    width: 5px;
+    height: 5px;
+    background: var(--ink-faint);
+    border-radius: 50%;
+    transition: all 0.15s;
+  }
+  .sb-posdot:hover { background: rgba(0, 0, 0, 0.04); }
+  .sb-posdot.active::after {
+    background: var(--ink);
+    width: 7px;
+    height: 7px;
+  }
+  
+  .sb-empty {
+    padding: 24px 20px;
+    text-align: center;
+    color: var(--ink-mute);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  
+  /* ════════════════════════════════════════════════
+     STAGE
+     ════════════════════════════════════════════════ */
+  .stage-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #e8e8eb;
+  }
+  
+  .slide {
+    position: absolute;
+    width: 1920px;
+    height: 1080px;
+    top: 50%;
+    left: 50%;
+    transform-origin: center center;
+    display: none;
+  }
+  .slide.active { display: block; }
+  
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    grid-template-rows: repeat(12, 1fr);
+    width: 100%;
+    height: 100%;
+  }
+  
+  /* ════════════════════════════════════════════════
+     BLOCK
+     ════════════════════════════════════════════════ */
+  .blk {
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    transition: outline 0.12s;
+    -webkit-corner-shape: squircle;
+    corner-shape: squircle;
+  }
+  .blk.selected {
+    outline: 3px solid #0961F2;
+    outline-offset: -3px;
+  }
+  
+  .blk-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  /* Image accent — full bleed image */
+  .blk--image .blk-inner {
+    background-size: cover;
+    background-position: center;
+  }
+  
+  /* HERO photo treatment (top of card) */
+  .blk--hero { padding: 0; }
+  .blk--hero .hero-photo {
+    flex: 1;
+    background-image: url('photo.jpg');
+    background-size: cover;
+    background-position: center 18%;
+    -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+  }
+  .blk--hero .hero-text {
+    margin-top: -36px;
+    z-index: 2;
+    position: relative;
+  }
+  
+  .blk--heroh { padding: 0; flex-direction: row; }
+  .blk--heroh .hero-photo {
+    width: 48%;
+    background-image: url('photo.jpg');
+    background-size: cover;
+    background-position: center 18%;
+    -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+    mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  }
+  .blk--heroh .hero-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-left: -28px;
+    z-index: 2;
+  }
+  
+  /* Text title/sub inside block */
+  .blk-title {
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    white-space: pre-wrap;
+  }
+  .blk-sub {
+    margin-top: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    white-space: pre-wrap;
+  }
+  
+  .blk--accent .blk-title,
+  .blk--accent .blk-sub {
+    color: rgba(255, 255, 255, 0.95);
+  }
+  
+  /* Image label (over image blocks) */
+  .img-label {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 9px 14px;
+    border-radius: 100px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink);
+    text-align: center;
+    letter-spacing: -0.01em;
+    z-index: 5;
+  }
+  
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 100px;
+    font-size: 13px;
+    z-index: 1000;
+    transition: transform 0.25s;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  
+  /* Hide scrollbar in stage */
+  .stage-wrap::-webkit-scrollbar { display: none; }
+  
+  /* Sidebar scroll */
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<!-- ─── TOP NAV ─── -->
+<div class="topnav">
+  <div class="topnav-title">Бенто-редактор<small>Валерий Рыжов · 1920×1080</small></div>
+  <div class="topnav-spacer"></div>
+  <div class="tabs">
+    <button class="tab active" data-tab="v1">V1 — Classic</button>
+    <button class="tab" data-tab="v2">V2 — Manifest First</button>
+    <button class="tab" data-tab="v3">V3 — Portfolio Heavy</button>
+  </div>
+  <button class="topnav-btn" id="btn-reset">Сбросить</button>
+  <button class="topnav-btn topnav-btn--primary" id="btn-export">Экспорт HTML</button>
+</div>
+
+<!-- ─── LAYOUT ─── -->
+<div class="layout">
+  
+  <!-- ─── SIDEBAR ─── -->
+  <aside class="sidebar" id="sidebar">
+    <!-- All controls injected here by JS -->
+  </aside>
+  
+  <!-- ─── STAGE ─── -->
+  <div class="stage-wrap" id="stage-wrap">
+    <div class="slide active" id="slide-v1"><div class="grid" id="grid-v1"></div></div>
+    <div class="slide" id="slide-v2"><div class="grid" id="grid-v2"></div></div>
+    <div class="slide" id="slide-v3"><div class="grid" id="grid-v3"></div></div>
+  </div>
+  
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   CONFIG / DATA
+   ════════════════════════════════════════════════════════════════ */
+
+const GRADIENTS = {
+  deepBlue:  { name: 'Deep Blue',  css: 'linear-gradient({a}deg, #0961F2, #0241C8)' },
+  mint:      { name: 'Mint',       css: 'linear-gradient({a}deg, #03FF8C, #5CF0F7)' },
+  raspberry: { name: 'Raspberry',  css: 'linear-gradient({a}deg, #FE1E7A, #F89530)' },
+  skyBlue:   { name: 'Sky',        css: 'linear-gradient({a}deg, #0567FF, #5BE7FF)' },
+  yellow:    { name: 'Yellow',     css: 'linear-gradient({a}deg, #FF9B19, #FFF358)' },
+  darkTeal:  { name: 'Dark Teal',  css: 'linear-gradient({a}deg, #3F3369, #32A790)' },
+  lavender:  { name: 'Lavender',   css: 'linear-gradient({a}deg, #6E70FF, #EFA9FF)' },
+};
+
+const IMAGES = {
+  banking:   { name: 'Banking · Dashboard', file: 'work-banking.jpg' },
+  bbtCover:  { name: 'BBT Travel · Cover', file: 'work-bbt-cover.jpg' },
+  bbtProg:   { name: 'BBT Travel · Program', file: 'work-bbt-program.jpg' },
+  syncoraP:  { name: 'Tech Startup · Problem', file: 'work-syncora-problem.jpg' },
+  syncoraA:  { name: 'Tech Startup · Roadmap', file: 'work-syncora-ask.jpg' },
+  journey:   { name: 'Journey · Lost Souls', file: 'work-journey1.jpg' },
+  streetD:   { name: 'Street Dogs · Rebel', file: 'work-streetdogs.jpg' },
+};
+
+const FONTS = ['IBM Plex Sans', 'IBM Plex Mono', 'Inter', 'Manrope'];
+
+/* ════════════════════════════════════════════════════════════════
+   DEFAULT STATE
+   ════════════════════════════════════════════════════════════════ */
+
+const blockDefaults = (overrides = {}) => ({
+  id: '',
+  type: 'plain',         // 'plain' | 'gradient' | 'image' | 'hero' | 'heroh'
+  gradient: null,        // gradient key
+  gradAngle: 135,
+  image: null,           // image key
+  imageLabel: '',
+  col: 1, row: 1, cspan: 4, rspan: 4,
+  title: '',
+  subtitle: '',
+  titleSize: 32,
+  subtitleSize: 14,
+  titleFont: 'IBM Plex Sans',
+  subtitleFont: 'IBM Plex Mono',
+  titleColor: '#1E1C1A',
+  subtitleColor: 'rgba(30, 28, 26, 0.6)',
+  align: 'left',         // 'left' | 'center' | 'right'
+  position: 'center-left', // 9 positions e.g. 'top-left', 'center-center'
+  padding: 32,
+  lineHeight: 1.1,
+  borderWidth: 0,
+  borderColor: '#363D49',
+  ...overrides,
+});
+
+let nextBlockId = 0;
+const newId = () => `b${++nextBlockId}`;
+
+function makeVariant1() {
+  const blocks = [];
+  // Hero (left)
+  blocks.push(blockDefaults({ id: newId(), type: 'hero', col: 1, row: 1, cspan: 6, rspan: 6,
+    title: 'Валерий\nРыжов', subtitle: 'Питч-деки · Брендинг · Презентации',
+    titleSize: 38, subtitleSize: 13, padding: 32, lineHeight: 0.95,
+  }));
+  // Offer
+  blocks.push(blockDefaults({ id: newId(), col: 1, row: 7, cspan: 6, rspan: 4,
+    title: 'Что я делаю', subtitle: '— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
+    titleSize: 14, subtitleSize: 18, position: 'top-left',
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+  }));
+  // Years
+  blocks.push(blockDefaults({ id: newId(), col: 1, row: 11, cspan: 3, rspan: 2,
+    title: '8+', subtitle: 'лет в дизайне',
+    titleSize: 56, subtitleSize: 12, position: 'center-center', align: 'center',
+  }));
+  // Verticals
+  blocks.push(blockDefaults({ id: newId(), col: 4, row: 11, cspan: 3, rspan: 2,
+    title: 'Вертикали', subtitle: 'Healthcare · Edtech\nTravel · Banking',
+    titleSize: 11, subtitleSize: 13, position: 'center-center', align: 'center',
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+  }));
+  // Manifest (centre top)
+  blocks.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'deepBlue', col: 7, row: 1, cspan: 8, rspan: 5,
+    title: 'ИИ генерирует.\nДирижёр делает так,\nчтобы это работало.',
+    subtitle: '— Манифест',
+    titleSize: 56, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.55)',
+    position: 'center-left', padding: 48, lineHeight: 1.08,
+  }));
+  // Banking work
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'banking',
+    imageLabel: 'Дашборд · Banking · NDA',
+    col: 7, row: 6, cspan: 4, rspan: 4,
+  }));
+  // BBT cover
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'bbtCover',
+    imageLabel: 'Конференция · BBT Travel',
+    col: 11, row: 6, cspan: 4, rspan: 4,
+  }));
+  // CTA
+  blocks.push(blockDefaults({ id: newId(), col: 7, row: 10, cspan: 8, rspan: 3,
+    title: 'Напишите — отвечу в тот же день',
+    subtitle: 'tg @shentakuki     itsuno@gmail.com',
+    titleSize: 22, subtitleSize: 13, padding: 32, position: 'center-left',
+  }));
+  // Syncora work
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'syncoraP',
+    imageLabel: 'Питч-дек · Tech Startup · NDA',
+    col: 15, row: 1, cspan: 6, rspan: 4,
+  }));
+  // Price
+  blocks.push(blockDefaults({ id: newId(), col: 15, row: 5, cspan: 6, rspan: 3,
+    title: 'от 30 тыс. ₽', subtitle: '3–5 дней под ключ\n\nЭкспресс-карточка как эта — 15–20 тыс. ₽',
+    titleSize: 38, subtitleSize: 12, position: 'center-left', padding: 32, lineHeight: 1,
+  }));
+  // Proof
+  blocks.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'skyBlue',
+    col: 15, row: 8, cspan: 6, rspan: 2,
+    title: 'Sold Out', subtitle: 'BBT Travel — презентация продала спонсорские пакеты',
+    titleSize: 30, subtitleSize: 12,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.95)',
+    position: 'center-left',
+  }));
+  // Street Dogs
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'streetD',
+    imageLabel: 'Айдентика · Street Dogs · Rebel',
+    col: 15, row: 10, cspan: 6, rspan: 3,
+  }));
+  return blocks;
+}
+
+function makeVariant2() {
+  const blocks = [];
+  // Hero horizontal
+  blocks.push(blockDefaults({ id: newId(), type: 'heroh',
+    col: 1, row: 1, cspan: 8, rspan: 4,
+    title: 'Валерий\nРыжов', subtitle: 'Питч-деки · Брендинг\nПрезентации',
+    titleSize: 44, subtitleSize: 13, padding: 32, lineHeight: 0.95,
+  }));
+  // Manifest big
+  blocks.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'deepBlue',
+    col: 9, row: 1, cspan: 12, rspan: 4,
+    title: 'ИИ генерирует. Дирижёр\nделает так, чтобы\nэто работало.',
+    subtitle: '— Манифест',
+    titleSize: 64, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.55)',
+    position: 'center-left', padding: 56, lineHeight: 1.05,
+  }));
+  // 4 works
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'bbtCover',
+    imageLabel: 'Конференция · BBT Travel',
+    col: 1, row: 5, cspan: 5, rspan: 4 }));
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'banking',
+    imageLabel: 'Дашборд · Banking · NDA',
+    col: 6, row: 5, cspan: 5, rspan: 4 }));
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'syncoraP',
+    imageLabel: 'Питч-дек · Tech Startup',
+    col: 11, row: 5, cspan: 5, rspan: 4 }));
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'streetD',
+    imageLabel: 'Street Dogs · Rebel',
+    col: 16, row: 5, cspan: 5, rspan: 4 }));
+  // Offer
+  blocks.push(blockDefaults({ id: newId(), col: 1, row: 9, cspan: 6, rspan: 4,
+    title: 'Что я делаю',
+    subtitle: '— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
+    titleSize: 14, subtitleSize: 18,
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+    position: 'top-left',
+  }));
+  // Price
+  blocks.push(blockDefaults({ id: newId(), col: 7, row: 9, cspan: 4, rspan: 4,
+    title: 'от 30 ₽К', subtitle: '3–5 дней\n\nБенто-карточка\n15–20 ₽К',
+    titleSize: 42, subtitleSize: 12,
+    position: 'center-left', padding: 28, lineHeight: 1,
+  }));
+  // Punch (years)
+  blocks.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'raspberry',
+    col: 11, row: 9, cspan: 4, rspan: 2,
+    title: '8+ лет', subtitle: 'опыта в дизайне\nи брендинге',
+    titleSize: 38, subtitleSize: 12,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.92)',
+    position: 'center-center', align: 'center',
+  }));
+  // Verticals
+  blocks.push(blockDefaults({ id: newId(), col: 11, row: 11, cspan: 4, rspan: 2,
+    title: 'Вертикали', subtitle: 'Healthcare · Edtech\nTravel · Banking',
+    titleSize: 11, subtitleSize: 13,
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+    position: 'center-center', align: 'center',
+  }));
+  // CTA vertical
+  blocks.push(blockDefaults({ id: newId(), col: 15, row: 9, cspan: 6, rspan: 4,
+    title: 'Напишите — отвечу\nв тот же день',
+    subtitle: 'tg @shentakuki\nitsuno@gmail.com\n\nОбсудим за 15 минут',
+    titleSize: 22, subtitleSize: 13,
+    position: 'center-center', align: 'center', lineHeight: 1.15,
+  }));
+  return blocks;
+}
+
+function makeVariant3() {
+  const blocks = [];
+  // Hero
+  blocks.push(blockDefaults({ id: newId(), type: 'hero',
+    col: 1, row: 1, cspan: 5, rspan: 7,
+    title: 'Валерий\nРыжов', subtitle: 'Питч-деки · Брендинг\nПрезентации',
+    titleSize: 36, subtitleSize: 12, padding: 28, lineHeight: 0.95,
+  }));
+  // Offer
+  blocks.push(blockDefaults({ id: newId(), col: 1, row: 8, cspan: 5, rspan: 5,
+    title: 'Что я делаю',
+    subtitle: '— Питч-дек для инвестора\n— Презентация для совета\n— Брендинг и фирменный стиль',
+    titleSize: 14, subtitleSize: 16,
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+    position: 'top-left',
+  }));
+  // Big featured Banking
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'banking',
+    imageLabel: 'Дашборд · R-Bank · корпоративный портал · NDA',
+    col: 6, row: 1, cspan: 9, rspan: 5,
+  }));
+  // BBT
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'bbtCover',
+    imageLabel: 'Конференция · BBT Travel',
+    col: 6, row: 6, cspan: 5, rspan: 4,
+  }));
+  // Street Dogs
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'streetD',
+    imageLabel: 'Street Dogs · Rebel',
+    col: 11, row: 6, cspan: 4, rspan: 4,
+  }));
+  // Manifest right
+  blocks.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'deepBlue',
+    col: 15, row: 1, cspan: 6, rspan: 5,
+    title: 'ИИ генерирует.\nДирижёр делает,\nчтобы работало.',
+    subtitle: '— Манифест',
+    titleSize: 36, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.55)',
+    position: 'center-left', padding: 36, lineHeight: 1.08,
+  }));
+  // Syncora
+  blocks.push(blockDefaults({ id: newId(), type: 'image', image: 'syncoraP',
+    imageLabel: 'Питч-дек · Tech Startup · NDA',
+    col: 15, row: 6, cspan: 6, rspan: 4,
+  }));
+  // Bottom strip
+  blocks.push(blockDefaults({ id: newId(), col: 6, row: 10, cspan: 3, rspan: 3,
+    title: '8+', subtitle: 'лет в дизайне',
+    titleSize: 50, subtitleSize: 11,
+    position: 'center-center', align: 'center',
+  }));
+  blocks.push(blockDefaults({ id: newId(), col: 9, row: 10, cspan: 3, rspan: 3,
+    title: 'Вертикали', subtitle: 'Healthcare\nEdtech · Travel\nBanking',
+    titleSize: 10, subtitleSize: 12,
+    titleColor: 'rgba(30, 28, 26, 0.45)',
+    position: 'center-center', align: 'center',
+  }));
+  blocks.push(blockDefaults({ id: newId(), col: 12, row: 10, cspan: 3, rspan: 3,
+    title: 'от 30 ₽К', subtitle: '3–5 дней\n\nБенто 15–20₽К',
+    titleSize: 26, subtitleSize: 11,
+    position: 'center-left', padding: 22, lineHeight: 1,
+  }));
+  blocks.push(blockDefaults({ id: newId(), type: 'gradient', gradient: 'skyBlue',
+    col: 15, row: 10, cspan: 3, rspan: 3,
+    title: 'Sold Out', subtitle: 'BBT Travel — продала спонсорские пакеты',
+    titleSize: 22, subtitleSize: 11,
+    titleColor: '#ffffff', subtitleColor: 'rgba(255,255,255,0.95)',
+    position: 'center-left', padding: 22,
+  }));
+  blocks.push(blockDefaults({ id: newId(), col: 18, row: 10, cspan: 3, rspan: 3,
+    title: 'Напишите —\nотвечу сегодня',
+    subtitle: 'tg @shentakuki\nitsuno@gmail.com',
+    titleSize: 14, subtitleSize: 11,
+    position: 'center-center', align: 'center', padding: 18, lineHeight: 1.2,
+  }));
+  return blocks;
+}
+
+const initialState = () => ({
+  global: {
+    gridGap: 24,
+    radius: 44,
+    shadowIntensity: 14,
+    shadowDark: '#000000', shadowDarkAlpha: 0.10,
+    shadowLight: '#FFFFFF', shadowLightAlpha: 1.0,
+    pageBg: '#f0f0f3',
+    blockBg: '#FFFFFF',
+    borderWidth: 0,
+    borderColor: '#363D49',
+  },
+  variants: {
+    v1: makeVariant1(),
+    v2: makeVariant2(),
+    v3: makeVariant3(),
+  },
+  active: 'v1',
+  selected: null, // {variant, blockId}
+});
+
+let state = initialState();
+
+/* ════════════════════════════════════════════════════════════════
+   RENDERING
+   ════════════════════════════════════════════════════════════════ */
+
+function getBlockBg(b, g) {
+  if (b.type === 'gradient' && b.gradient && GRADIENTS[b.gradient]) {
+    return GRADIENTS[b.gradient].css.replace('{a}', b.gradAngle || 135);
+  }
+  return g.blockBg;
+}
+
+function shadowCss(g) {
+  const i = g.shadowIntensity;
+  const lo = Math.round(i * 0.6);
+  const dark = hexToRgba(g.shadowDark, g.shadowDarkAlpha);
+  const light = hexToRgba(g.shadowLight, g.shadowLightAlpha);
+  return `-${lo}px -${lo}px ${i}px ${light}, ${lo}px ${lo}px ${i}px ${dark}`;
+}
+
+function shadowAccentCss(g) {
+  const i = g.shadowIntensity + 2;
+  const lo = Math.round(i * 0.5);
+  return `${lo}px ${lo}px ${i}px ${hexToRgba(g.shadowDark, g.shadowDarkAlpha + 0.02)}`;
+}
+
+function hexToRgba(hex, alpha) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function positionStyle(pos) {
+  // pos like 'top-left', 'center-center', 'bottom-right'
+  const [v, h] = pos.split('-');
+  const map = { top: 'flex-start', center: 'center', bottom: 'flex-end',
+                left: 'flex-start', right: 'flex-end' };
+  return `justify-content: ${map[v]}; align-items: ${map[h]};`;
+}
+
+function renderBlock(b, variantId) {
+  const g = state.global;
+  const isAccent = b.type === 'gradient';
+  const isImage = b.type === 'image';
+  const isHero = b.type === 'hero';
+  const isHeroH = b.type === 'heroh';
+  
+  const bg = isImage ? g.blockBg : getBlockBg(b, g);
+  const shadow = isAccent ? shadowAccentCss(g) : shadowCss(g);
+  const sel = state.selected && state.selected.variant === variantId && state.selected.blockId === b.id;
+  
+  const cls = ['blk'];
+  if (isAccent) cls.push('blk--accent');
+  if (isImage) cls.push('blk--image');
+  if (isHero) cls.push('blk--hero');
+  if (isHeroH) cls.push('blk--heroh');
+  if (sel) cls.push('selected');
+  
+  const blockStyle = `
+    grid-column: ${b.col} / span ${b.cspan};
+    grid-row: ${b.row} / span ${b.rspan};
+    background: ${bg};
+    border-radius: ${g.radius}px;
+    box-shadow: ${shadow};
+    border: ${b.borderWidth ? `${b.borderWidth}px solid ${b.borderColor}` : 'none'};
+  `;
+  
+  const div = document.createElement('div');
+  div.className = cls.join(' ');
+  div.style.cssText = blockStyle;
+  div.dataset.blockId = b.id;
+  div.dataset.variant = variantId;
+  
+  if (isImage && b.image && IMAGES[b.image]) {
+    div.style.backgroundImage = `url('${IMAGES[b.image].file}')`;
+    div.style.backgroundSize = 'cover';
+    div.style.backgroundPosition = 'center';
+    if (b.imageLabel) {
+      const label = document.createElement('div');
+      label.className = 'img-label';
+      label.textContent = b.imageLabel;
+      div.appendChild(label);
+    }
+  } else if (isHero) {
+    const photo = document.createElement('div');
+    photo.className = 'hero-photo';
+    div.appendChild(photo);
+    
+    if (b.title || b.subtitle) {
+      const text = document.createElement('div');
+      text.className = 'hero-text';
+      text.style.cssText = `padding: 0 ${b.padding}px ${b.padding}px;`;
+      addTextContent(text, b);
+      div.appendChild(text);
+    }
+  } else if (isHeroH) {
+    const photo = document.createElement('div');
+    photo.className = 'hero-photo';
+    div.appendChild(photo);
+    
+    if (b.title || b.subtitle) {
+      const text = document.createElement('div');
+      text.className = 'hero-text';
+      text.style.cssText = `padding: ${b.padding}px;`;
+      addTextContent(text, b);
+      div.appendChild(text);
+    }
+  } else {
+    const inner = document.createElement('div');
+    inner.className = 'blk-inner';
+    inner.style.cssText = `padding: ${b.padding}px; ${positionStyle(b.position)} text-align: ${b.align};`;
+    addTextContent(inner, b);
+    div.appendChild(inner);
+  }
+  
+  div.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectBlock(variantId, b.id);
+  });
+  
+  return div;
+}
+
+function addTextContent(parent, b) {
+  if (b.title) {
+    const t = document.createElement('div');
+    t.className = 'blk-title';
+    t.style.cssText = `font-family: ${b.titleFont}, sans-serif; font-size: ${b.titleSize}px; color: ${b.titleColor}; line-height: ${b.lineHeight};`;
+    t.textContent = b.title;
+    parent.appendChild(t);
+  }
+  if (b.subtitle) {
+    const s = document.createElement('div');
+    s.className = 'blk-sub';
+    s.style.cssText = `font-family: ${b.subtitleFont}, monospace; font-size: ${b.subtitleSize}px; color: ${b.subtitleColor};`;
+    s.textContent = b.subtitle;
+    parent.appendChild(s);
+  }
+}
+
+function renderStage() {
+  const g = state.global;
+  ['v1', 'v2', 'v3'].forEach(vid => {
+    const slide = document.getElementById(`slide-${vid}`);
+    slide.style.background = g.pageBg;
+    slide.classList.toggle('active', vid === state.active);
+    
+    const grid = document.getElementById(`grid-${vid}`);
+    grid.innerHTML = '';
+    grid.style.gap = `${g.gridGap}px`;
+    grid.style.padding = `${g.gridGap + 4}px`;
+    grid.style.background = g.pageBg;
+    
+    state.variants[vid].forEach(b => {
+      grid.appendChild(renderBlock(b, vid));
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SIDEBAR RENDERING
+   ════════════════════════════════════════════════════════════════ */
+
+function renderSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = '';
+  
+  // ─── GLOBAL: Grid ───
+  sb.appendChild(section('Сетка', `
+    <div class="sb-row"><span class="sb-label">Отступы</span><span class="sb-val">${state.global.gridGap} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="60" value="${state.global.gridGap}" data-g="gridGap">
+    
+    <div class="sb-row"><span class="sb-label">Радиус</span><span class="sb-val">${state.global.radius} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="80" value="${state.global.radius}" data-g="radius">
+  `));
+  
+  // ─── GLOBAL: Shadow ───
+  sb.appendChild(section('Тень', `
+    <div class="sb-row"><span class="sb-label">Интенсивность</span><span class="sb-val">${state.global.shadowIntensity} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="32" value="${state.global.shadowIntensity}" data-g="shadowIntensity">
+    
+    <div class="sb-label" style="margin-bottom:4px;">Цвет тени</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.shadowDark};"><input type="color" value="${state.global.shadowDark}" data-g="shadowDark"></div>
+      <input class="sb-color-input" value="${state.global.shadowDark}" data-g="shadowDark">
+    </div>
+    
+    <div class="sb-label" style="margin-bottom:4px;">Цвет блика</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.shadowLight};"><input type="color" value="${state.global.shadowLight}" data-g="shadowLight"></div>
+      <input class="sb-color-input" value="${state.global.shadowLight}" data-g="shadowLight">
+    </div>
+  `));
+  
+  // ─── GLOBAL: Surfaces ───
+  sb.appendChild(section('Поверхности', `
+    <div class="sb-label" style="margin-bottom:4px;">Фон страницы</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.pageBg};"><input type="color" value="${state.global.pageBg}" data-g="pageBg"></div>
+      <input class="sb-color-input" value="${state.global.pageBg}" data-g="pageBg">
+    </div>
+    
+    <div class="sb-label" style="margin-bottom:4px;">Фон блока</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${state.global.blockBg};"><input type="color" value="${state.global.blockBg}" data-g="blockBg"></div>
+      <input class="sb-color-input" value="${state.global.blockBg}" data-g="blockBg">
+    </div>
+  `));
+  
+  // ─── BLOCK-SPECIFIC ───
+  if (state.selected) {
+    const b = getSelectedBlock();
+    if (b) {
+      sb.appendChild(blockSection(b));
+      sb.appendChild(textSection(b));
+    }
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'sb-empty';
+    empty.innerHTML = 'Кликни на блок,<br>чтобы редактировать его<br>содержимое и размеры';
+    sb.appendChild(empty);
+  }
+  
+  // Bind handlers
+  bindSidebarHandlers();
+}
+
+function section(title, innerHtml, hint = '') {
+  const s = document.createElement('div');
+  s.className = 'sb-section';
+  s.innerHTML = `<div class="sb-h">${title}${hint ? `<span class="sb-h-hint">${hint}</span>` : ''}</div>${innerHtml}`;
+  return s;
+}
+
+function blockSection(b) {
+  const isImage = b.type === 'image';
+  const isGrad = b.type === 'gradient';
+  const isPlain = b.type === 'plain' || b.type === 'hero' || b.type === 'heroh';
+  
+  // gradient grid
+  let gradHtml = '<div class="sb-grid">';
+  Object.entries(GRADIENTS).forEach(([k, v]) => {
+    const sel = isGrad && b.gradient === k ? ' selected' : '';
+    gradHtml += `<div class="sb-swatch${sel}" style="background:${v.css.replace('{a}', 135)};" data-grad="${k}"></div>`;
+  });
+  gradHtml += '</div>';
+  
+  // angle slider (only when gradient)
+  let angleHtml = '';
+  if (isGrad) {
+    angleHtml = `
+      <div class="sb-row"><span class="sb-label">Угол</span><span class="sb-val">${b.gradAngle}°</span></div>
+      <input type="range" class="sb-slider" min="0" max="360" value="${b.gradAngle}" data-b="gradAngle">
+    `;
+  }
+  
+  // image grid
+  let imgHtml = '<div class="sb-imggrid">';
+  Object.entries(IMAGES).forEach(([k, v]) => {
+    const sel = isImage && b.image === k ? ' selected' : '';
+    imgHtml += `<div class="sb-imgswatch${sel}" style="background-image:url('${v.file}');" data-img="${k}" title="${v.name}"></div>`;
+  });
+  imgHtml += '</div>';
+  
+  let imageLabelHtml = '';
+  if (isImage) {
+    imageLabelHtml = `
+      <div class="sb-label" style="margin-bottom:4px;">Подпись на картинке</div>
+      <input type="text" class="sb-input" value="${escapeHtml(b.imageLabel)}" data-b="imageLabel" placeholder="Например: Питч-дек · NDA">
+    `;
+  }
+  
+  const tabActive = (t) => t === b.type ? 'active' : '';
+  
+  return section('Акцент', `
+    <div class="sb-tabs">
+      <button class="sb-tab ${tabActive('plain')}" data-type="plain">Обычный</button>
+      <button class="sb-tab ${tabActive('gradient')}" data-type="gradient">Градиент</button>
+      <button class="sb-tab ${tabActive('image')}" data-type="image">Картинка</button>
+    </div>
+    
+    ${isGrad ? gradHtml + angleHtml : ''}
+    ${isImage ? imgHtml + imageLabelHtml : ''}
+    
+    <div class="sb-h" style="margin-top:14px;">Размер и положение</div>
+    
+    <div class="sb-sizerow">
+      <span class="sb-label">Ширина</span>
+      <div class="sb-sizectrl">
+        <button class="sb-iconbtn" data-act="moveLeft" ${b.col <= 1 ? 'disabled' : ''}>←</button>
+        <button class="sb-iconbtn" data-act="moveRight" ${b.col + b.cspan > 20 ? 'disabled' : ''}>→</button>
+        <span class="sb-numdisplay">${b.cspan}</span>
+        <button class="sb-iconbtn" data-act="growW" ${b.col + b.cspan > 20 ? 'disabled' : ''}>+</button>
+      </div>
+    </div>
+    
+    <div class="sb-sizerow">
+      <span class="sb-label">Высота</span>
+      <div class="sb-sizectrl">
+        <button class="sb-iconbtn" data-act="moveUp" ${b.row <= 1 ? 'disabled' : ''}>↑</button>
+        <button class="sb-iconbtn" data-act="moveDown" ${b.row + b.rspan > 12 ? 'disabled' : ''}>↓</button>
+        <span class="sb-numdisplay">${b.rspan}</span>
+        <button class="sb-iconbtn" data-act="growH" ${b.row + b.rspan > 12 ? 'disabled' : ''}>+</button>
+      </div>
+    </div>
+    
+    <div class="sb-btnrow" style="margin-top:8px;">
+      <button class="sb-iconbtn" style="height:32px;" data-act="shrinkW" ${b.cspan <= 1 ? 'disabled' : ''}>− Ширина</button>
+      <button class="sb-iconbtn" style="height:32px;" data-act="shrinkH" ${b.rspan <= 1 ? 'disabled' : ''}>− Высота</button>
+    </div>
+    
+    <button class="sb-btn" data-act="splitH" style="margin-top:8px;" ${b.cspan <= 1 ? 'disabled' : ''}>Делить ↔</button>
+    <button class="sb-btn" data-act="splitV" ${b.rspan <= 1 ? 'disabled' : ''}>Делить ↕</button>
+    <button class="sb-btn sb-btn--danger" data-act="delete">Удалить блок</button>
+    <button class="sb-btn" data-act="deselect">Снять выделение</button>
+  `);
+}
+
+function textSection(b) {
+  const align = b.align;
+  const pos = b.position;
+  
+  // Position 9-grid
+  const positions = ['top-left','top-center','top-right','center-left','center-center','center-right','bottom-left','bottom-center','bottom-right'];
+  let posGrid = '<div class="sb-posgrid">';
+  positions.forEach(p => {
+    posGrid += `<button class="sb-posdot${p === pos ? ' active' : ''}" data-pos="${p}"></button>`;
+  });
+  posGrid += '</div>';
+  
+  return section('Текст', `
+    <div class="sb-label" style="margin-bottom:4px;">Заголовок</div>
+    <textarea class="sb-textarea" data-b="title" placeholder="—">${escapeHtml(b.title)}</textarea>
+    
+    <div class="sb-label" style="margin-bottom:4px;">Подпись</div>
+    <textarea class="sb-textarea" data-b="subtitle" placeholder="—">${escapeHtml(b.subtitle)}</textarea>
+    
+    <div class="sb-twocol">
+      <div>
+        <div style="margin-bottom:4px;">Шрифт заголовка</div>
+        <select class="sb-select" data-b="titleFont">
+          ${FONTS.map(f => `<option ${f === b.titleFont ? 'selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <div style="margin-bottom:4px;">Шрифт подписи</div>
+        <select class="sb-select" data-b="subtitleFont">
+          ${FONTS.map(f => `<option ${f === b.subtitleFont ? 'selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    
+    <div class="sb-row"><span class="sb-label">Размер заголовка</span><span class="sb-val">${b.titleSize} px</span></div>
+    <input type="range" class="sb-slider" min="8" max="100" value="${b.titleSize}" data-b="titleSize">
+    
+    <div class="sb-row"><span class="sb-label">Размер подписи</span><span class="sb-val">${b.subtitleSize} px</span></div>
+    <input type="range" class="sb-slider" min="8" max="40" value="${b.subtitleSize}" data-b="subtitleSize">
+    
+    <div class="sb-label" style="margin-bottom:4px;">Цвет текста</div>
+    <div class="sb-color">
+      <div class="sb-color-swatch" style="background:${b.titleColor};"><input type="color" value="${rgbaToHex(b.titleColor)}" data-b="titleColor"></div>
+      <input class="sb-color-input" value="${b.titleColor}" data-b="titleColor">
+    </div>
+    
+    <div class="sb-label" style="margin-bottom:6px;">Выравнивание</div>
+    <div class="sb-aligntabs">
+      <button class="sb-aligntab ${align==='left'?'active':''}" data-align="left">${alignIcon('left')}</button>
+      <button class="sb-aligntab ${align==='center'?'active':''}" data-align="center">${alignIcon('center')}</button>
+      <button class="sb-aligntab ${align==='right'?'active':''}" data-align="right">${alignIcon('right')}</button>
+    </div>
+    
+    <div class="sb-label" style="margin-bottom:6px;">Положение в блоке</div>
+    ${posGrid}
+    
+    <div class="sb-row"><span class="sb-label">Отступ</span><span class="sb-val">${b.padding} px</span></div>
+    <input type="range" class="sb-slider" min="0" max="80" value="${b.padding}" data-b="padding">
+    
+    <div class="sb-row"><span class="sb-label">Интерлиньяж</span><span class="sb-val">${b.lineHeight.toFixed(2)}</span></div>
+    <input type="range" class="sb-slider" min="0.8" max="2" step="0.05" value="${b.lineHeight}" data-b="lineHeight">
+  `);
+}
+
+function alignIcon(type) {
+  const lines = {
+    left:   '<line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="7" x2="10" y2="7"/><line x1="2" y1="11" x2="13" y2="11"/>',
+    center: '<line x1="3" y1="3" x2="13" y2="3"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="2" y1="11" x2="14" y2="11"/>',
+    right:  '<line x1="2" y1="3" x2="14" y2="3"/><line x1="6" y1="7" x2="14" y2="7"/><line x1="3" y1="11" x2="14" y2="11"/>',
+  };
+  return `<svg viewBox="0 0 16 14" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round">${lines[type]}</svg>`;
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function rgbaToHex(c) {
+  if (c.startsWith('#')) return c;
+  // crude rgba(...) → hex of rgb only
+  const m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return '#000000';
+  const h = (n) => parseInt(n).toString(16).padStart(2, '0');
+  return `#${h(m[1])}${h(m[2])}${h(m[3])}`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   EVENTS / HANDLERS
+   ════════════════════════════════════════════════════════════════ */
+
+function bindSidebarHandlers() {
+  // Sliders + inputs with data-g (global)
+  document.querySelectorAll('[data-g]').forEach(el => {
+    const key = el.dataset.g;
+    const handler = () => {
+      let v = el.value;
+      if (el.type === 'range') v = +v;
+      state.global[key] = v;
+      // Sync companion input/swatch
+      document.querySelectorAll(`[data-g="${key}"]`).forEach(other => {
+        if (other !== el) other.value = v;
+      });
+      const swatch = document.querySelector(`.sb-color-swatch input[data-g="${key}"]`);
+      if (swatch) swatch.parentElement.style.background = v;
+      renderStage();
+      // For sliders update the displayed val
+      const valEl = el.parentElement?.querySelector('.sb-val');
+      // Also: re-render sidebar val readouts efficiently
+      updateGlobalReadouts();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+  
+  // data-b — block fields
+  document.querySelectorAll('[data-b]').forEach(el => {
+    const key = el.dataset.b;
+    const handler = () => {
+      const b = getSelectedBlock(); if (!b) return;
+      let v = el.value;
+      if (el.type === 'range') v = +v;
+      if (key === 'lineHeight') v = +v;
+      b[key] = v;
+      // sync companion
+      document.querySelectorAll(`[data-b="${key}"]`).forEach(other => {
+        if (other !== el && other.value !== el.value) other.value = el.value;
+      });
+      const swatch = document.querySelector(`.sb-color-swatch input[data-b="${key}"]`);
+      if (swatch) swatch.parentElement.style.background = el.value;
+      renderStage();
+      updateBlockReadouts();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+  
+  // Type tabs
+  document.querySelectorAll('[data-type]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      const t = el.dataset.type;
+      // Don't override hero — switching hero off is OK, but switching plain to hero is unusual
+      // For simplicity: any block can become plain/gradient/image
+      b.type = t;
+      if (t === 'plain') { b.gradient = null; b.image = null; }
+      if (t === 'gradient' && !b.gradient) b.gradient = 'deepBlue';
+      if (t === 'image' && !b.image) b.image = 'banking';
+      renderAll();
+    });
+  });
+  
+  // Gradient swatches
+  document.querySelectorAll('[data-grad]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.type = 'gradient';
+      b.gradient = el.dataset.grad;
+      renderAll();
+    });
+  });
+  
+  // Image swatches
+  document.querySelectorAll('[data-img]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.type = 'image';
+      b.image = el.dataset.img;
+      if (!b.imageLabel && IMAGES[b.image]) b.imageLabel = IMAGES[b.image].name;
+      renderAll();
+    });
+  });
+  
+  // Align tabs
+  document.querySelectorAll('[data-align]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.align = el.dataset.align;
+      renderAll();
+    });
+  });
+  
+  // Position 9-dot
+  document.querySelectorAll('[data-pos]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      b.position = el.dataset.pos;
+      renderAll();
+    });
+  });
+  
+  // Action buttons
+  document.querySelectorAll('[data-act]').forEach(el => {
+    el.addEventListener('click', () => {
+      const b = getSelectedBlock(); if (!b) return;
+      const a = el.dataset.act;
+      if (a === 'moveLeft' && b.col > 1) b.col--;
+      if (a === 'moveRight' && b.col + b.cspan <= 20) b.col++;
+      if (a === 'moveUp' && b.row > 1) b.row--;
+      if (a === 'moveDown' && b.row + b.rspan <= 12) b.row++;
+      if (a === 'growW' && b.col + b.cspan <= 20) b.cspan++;
+      if (a === 'growH' && b.row + b.rspan <= 12) b.rspan++;
+      if (a === 'shrinkW' && b.cspan > 1) b.cspan--;
+      if (a === 'shrinkH' && b.rspan > 1) b.rspan--;
+      if (a === 'delete') {
+        const v = state.selected.variant;
+        state.variants[v] = state.variants[v].filter(x => x.id !== b.id);
+        state.selected = null;
+      }
+      if (a === 'deselect') state.selected = null;
+      if (a === 'splitH' && b.cspan > 1) {
+        const half = Math.floor(b.cspan / 2);
+        const nb = { ...b, id: newId(), col: b.col + half, cspan: b.cspan - half, title: '', subtitle: '', image: null, imageLabel: '' };
+        b.cspan = half;
+        state.variants[state.selected.variant].push(nb);
+      }
+      if (a === 'splitV' && b.rspan > 1) {
+        const half = Math.floor(b.rspan / 2);
+        const nb = { ...b, id: newId(), row: b.row + half, rspan: b.rspan - half, title: '', subtitle: '', image: null, imageLabel: '' };
+        b.rspan = half;
+        state.variants[state.selected.variant].push(nb);
+      }
+      renderAll();
+    });
+  });
+}
+
+function updateGlobalReadouts() {
+  // Lazy: just re-render sidebar values that are easy to compute
+  // (intentionally don't full re-render to keep focus / scroll)
+  document.querySelectorAll('.sb-section').forEach(sec => {
+    sec.querySelectorAll('input[data-g]').forEach(el => {
+      if (el.type === 'range') {
+        const valEl = el.previousElementSibling?.querySelector('.sb-val');
+        if (valEl) {
+          const key = el.dataset.g;
+          const unit = (key === 'gridGap' || key === 'radius' || key === 'shadowIntensity') ? ' px' : '';
+          valEl.textContent = el.value + unit;
+        }
+      }
+    });
+  });
+}
+
+function updateBlockReadouts() {
+  document.querySelectorAll('input[data-b]').forEach(el => {
+    if (el.type === 'range') {
+      const valEl = el.previousElementSibling?.querySelector('.sb-val');
+      if (valEl) {
+        const key = el.dataset.b;
+        let unit = ' px';
+        if (key === 'lineHeight') unit = '';
+        if (key === 'gradAngle') unit = '°';
+        let v = el.value;
+        if (key === 'lineHeight') v = (+v).toFixed(2);
+        valEl.textContent = v + unit;
+      }
+    }
+  });
+}
+
+function renderAll() {
+  renderSidebar();
+  renderStage();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SELECTION / NAVIGATION
+   ════════════════════════════════════════════════════════════════ */
+
+function getSelectedBlock() {
+  if (!state.selected) return null;
+  const v = state.variants[state.selected.variant];
+  return v.find(b => b.id === state.selected.blockId);
+}
+
+function selectBlock(variant, blockId) {
+  state.selected = { variant, blockId };
+  renderAll();
+}
+
+function deselect() {
+  state.selected = null;
+  renderAll();
+}
+
+// Click outside blocks to deselect
+document.getElementById('stage-wrap').addEventListener('click', (e) => {
+  if (!e.target.closest('.blk')) deselect();
+});
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    state.active = t.dataset.tab;
+    state.selected = null;
+    renderAll();
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+  if (e.key === '1') document.querySelector('[data-tab="v1"]').click();
+  if (e.key === '2') document.querySelector('[data-tab="v2"]').click();
+  if (e.key === '3') document.querySelector('[data-tab="v3"]').click();
+  if (e.key === 'Escape') deselect();
+});
+
+/* ════════════════════════════════════════════════════════════════
+   STAGE FIT
+   ════════════════════════════════════════════════════════════════ */
+
+const wrap = document.getElementById('stage-wrap');
+function fit() {
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  const scale = Math.min(w / 1920, h / 1080);
+  document.querySelectorAll('.slide').forEach(s => {
+    s.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  });
+}
+window.addEventListener('resize', fit);
+
+/* ════════════════════════════════════════════════════════════════
+   EXPORT / RESET
+   ════════════════════════════════════════════════════════════════ */
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!confirm('Сбросить все изменения и вернуться к исходным трём вариантам?')) return;
+  nextBlockId = 0;
+  state = initialState();
+  renderAll();
+  showToast('Сброшено');
+});
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  // Export current active variant as standalone HTML (frozen state, no editor)
+  const html = exportActiveVariant();
+  downloadFile(`bento-${state.active}.html`, html);
+  showToast(`Экспорт: bento-${state.active}.html`);
+});
+
+function exportActiveVariant() {
+  const g = state.global;
+  const blocks = state.variants[state.active];
+  
+  let blocksHtml = '';
+  blocks.forEach(b => {
+    const isAccent = b.type === 'gradient';
+    const isImage = b.type === 'image';
+    const isHero = b.type === 'hero';
+    const isHeroH = b.type === 'heroh';
+    
+    let bg = isImage ? g.blockBg : getBlockBg(b, g);
+    let extraStyle = '';
+    if (isImage && b.image && IMAGES[b.image]) {
+      extraStyle = `background-image: url('${IMAGES[b.image].file}'); background-size: cover; background-position: center;`;
+    }
+    
+    const shadow = isAccent ? shadowAccentCss(g) : shadowCss(g);
+    const cls = ['blk'];
+    if (isAccent) cls.push('blk--accent');
+    if (isImage) cls.push('blk--image');
+    
+    let inner = '';
+    if (isImage) {
+      if (b.imageLabel) inner = `<div class="img-label">${escapeHtml(b.imageLabel)}</div>`;
+    } else if (isHero) {
+      inner = `<div class="hero-photo"></div>`;
+      if (b.title || b.subtitle) {
+        inner += `<div class="hero-text" style="padding:0 ${b.padding}px ${b.padding}px;">`;
+        if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
+        if (b.subtitle) inner += `<div class="blk-sub" style="font-family:${b.subtitleFont},monospace;font-size:${b.subtitleSize}px;color:${b.subtitleColor};">${escapeHtml(b.subtitle).replace(/\n/g,'<br>')}</div>`;
+        inner += `</div>`;
+      }
+    } else if (isHeroH) {
+      inner = `<div class="hero-photo"></div>`;
+      if (b.title || b.subtitle) {
+        inner += `<div class="hero-text" style="padding:${b.padding}px;">`;
+        if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
+        if (b.subtitle) inner += `<div class="blk-sub" style="font-family:${b.subtitleFont},monospace;font-size:${b.subtitleSize}px;color:${b.subtitleColor};">${escapeHtml(b.subtitle).replace(/\n/g,'<br>')}</div>`;
+        inner += `</div>`;
+      }
+    } else {
+      inner = `<div class="blk-inner" style="padding:${b.padding}px;${positionStyle(b.position)}text-align:${b.align};">`;
+      if (b.title) inner += `<div class="blk-title" style="font-family:${b.titleFont},sans-serif;font-size:${b.titleSize}px;color:${b.titleColor};line-height:${b.lineHeight};">${escapeHtml(b.title).replace(/\n/g,'<br>')}</div>`;
+      if (b.subtitle) inner += `<div class="blk-sub" style="font-family:${b.subtitleFont},monospace;font-size:${b.subtitleSize}px;color:${b.subtitleColor};">${escapeHtml(b.subtitle).replace(/\n/g,'<br>')}</div>`;
+      inner += `</div>`;
+    }
+    
+    const heroClass = isHero ? ' blk--hero' : '';
+    const heroHClass = isHeroH ? ' blk--heroh' : '';
+    
+    blocksHtml += `<div class="${cls.join(' ')}${heroClass}${heroHClass}" style="grid-column:${b.col}/span ${b.cspan};grid-row:${b.row}/span ${b.rspan};background:${bg};${extraStyle}border-radius:${g.radius}px;box-shadow:${shadow};${b.borderWidth?'border:'+b.borderWidth+'px solid '+b.borderColor+';':''}">${inner}</div>`;
+  });
+  
+  return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Бенто-слайд</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden}body{background:#e8e8eb;font-family:'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center}.stage{position:absolute;width:1920px;height:1080px;top:50%;left:50%;transform-origin:center;background:${g.pageBg};display:flex}.grid{display:grid;grid-template-columns:repeat(20,1fr);grid-template-rows:repeat(12,1fr);gap:${g.gridGap}px;padding:${g.gridGap+4}px;width:100%;height:100%;background:${g.pageBg}}.blk{display:flex;flex-direction:column;overflow:hidden;position:relative;-webkit-corner-shape:squircle;corner-shape:squircle}.blk--accent{color:rgba(255,255,255,.95)}.blk-inner{flex:1;display:flex;flex-direction:column;overflow:hidden}.blk-title{font-weight:700;line-height:1;letter-spacing:-.025em;white-space:pre-wrap}.blk-sub{margin-top:8px;line-height:1.35;letter-spacing:.01em;white-space:pre-wrap}.blk--hero{padding:0}.blk--hero .hero-photo{flex:1;background-image:url('photo.jpg');background-size:cover;background-position:center 18%;-webkit-mask-image:linear-gradient(to bottom,black 65%,transparent 100%);mask-image:linear-gradient(to bottom,black 65%,transparent 100%)}.blk--hero .hero-text{margin-top:-36px;z-index:2;position:relative}.blk--heroh{padding:0;flex-direction:row}.blk--heroh .hero-photo{width:48%;background-image:url('photo.jpg');background-size:cover;background-position:center 18%;-webkit-mask-image:linear-gradient(to right,black 75%,transparent 100%);mask-image:linear-gradient(to right,black 75%,transparent 100%)}.blk--heroh .hero-text{flex:1;display:flex;flex-direction:column;justify-content:center;margin-left:-28px;z-index:2}.img-label{position:absolute;bottom:16px;left:16px;right:16px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:9px 14px;border-radius:100px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;color:#1E1C1A;text-align:center;z-index:5}</style></head><body><div class="stage" id="s"><div class="grid">${blocksHtml}</div></div><script>function fit(){var w=innerWidth,h=innerHeight,s=Math.min(w/1920,h/1080);document.getElementById('s').style.transform='translate(-50%,-50%) scale('+s+')'}fit();onresize=fit;<\/script></body></html>`;
+}
+
+function downloadFile(name, content) {
+  const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   INIT
+   ════════════════════════════════════════════════════════════════ */
+
+renderAll();
+fit();
+if (document.fonts) document.fonts.ready.then(fit);
+</script>
+
+</body>
+</html>

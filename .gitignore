@@ -1,0 +1,9 @@
+# Local DesignCanvas state sidecar (per-machine UI state)
+.design-canvas.state.json
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.swp
+.idea/
+.vscode/
