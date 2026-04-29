@@ -1787,6 +1787,59 @@ function findFreeSpot(blocks, cspan, rspan, excludeId = null) {
   return null;
 }
 
+function findFreeSpotNear(blocks, cspan, rspan, prefCol = 1, prefRow = 1, excludeId = null) {
+  let best = null, bestDist = Infinity;
+  for (let r = 1; r + rspan - 1 <= 12; r++) {
+    for (let c = 1; c + cspan - 1 <= 20; c++) {
+      if (cellsOccupied(blocks, c, r, cspan, rspan, excludeId)) continue;
+      const dist = Math.abs(c - prefCol) + Math.abs(r - prefRow);
+      if (dist < bestDist) { bestDist = dist; best = { col: c, row: r }; }
+    }
+  }
+  return best;
+}
+
+function tryReplaceWithRepack(blocks, draggedId, newCol, newRow, newCspan, newRspan) {
+  const dragged = blocks.find(b => b.id === draggedId);
+  if (!dragged) return null;
+
+  const conflicts = blocks.filter(b =>
+    b.id !== draggedId &&
+    !(newCol + newCspan - 1 < b.col ||
+      newCol > b.col + b.cspan - 1 ||
+      newRow + newRspan - 1 < b.row ||
+      newRow > b.row + b.rspan - 1)
+  );
+
+  // Stationary blocks keep their positions; dragged moves to target
+  const stationary = blocks.filter(b => b.id !== draggedId && !conflicts.includes(b));
+  const draggedNew = { ...dragged, col: newCol, row: newRow, cspan: newCspan, rspan: newRspan };
+  const layout = [...stationary, draggedNew];
+
+  // Repack each displaced block at the nearest free spot to its home
+  // Order: top-to-bottom, left-to-right — deterministic
+  const sorted = [...conflicts].sort((a, b) => a.row - b.row || a.col - b.col);
+  for (const b of sorted) {
+    const spot = findFreeSpotNear(layout, b.cspan, b.rspan, b.col, b.row);
+    if (!spot) return null; // ran out of room — abort, drag stays at last valid layout
+    layout.push({ ...b, col: spot.col, row: spot.row });
+  }
+  return layout;
+}
+
+function applyLayout(blocks, newLayout, variantId) {
+  const newById = Object.fromEntries(newLayout.map(b => [b.id, b]));
+  for (const ob of blocks) {
+    const nb = newById[ob.id];
+    if (!nb) continue;
+    if (nb.col !== ob.col || nb.row !== ob.row || nb.cspan !== ob.cspan || nb.rspan !== ob.rspan) {
+      ob.col = nb.col; ob.row = nb.row;
+      ob.cspan = nb.cspan; ob.rspan = nb.rspan;
+      updateBlockDom(ob, variantId);
+    }
+  }
+}
+
 function createNewBlock() {
   const v = state.active;
   const blocks = state.variants[v];
@@ -1812,7 +1865,9 @@ function duplicateBlock() {
   const v = state.selected.variant;
   const orig = getSelectedBlock();
   if (!orig) return;
-  const spot = findFreeSpot(state.variants[v], orig.cspan, orig.rspan);
+  // Prefer the spot just to the right of original; fall back to nearest free.
+  const spot = findFreeSpotNear(state.variants[v], orig.cspan, orig.rspan,
+    orig.col + orig.cspan, orig.row);
   if (!spot) { showToast('Нет места для дубликата'); return; }
   const copy = { ...orig, id: newId(), col: spot.col, row: spot.row };
   state.variants[v].push(copy);
@@ -1865,12 +1920,9 @@ function startBlockInteraction(e, b, variantId) {
     newCol = Math.max(1, Math.min(20 - drag.cspan + 1, newCol));
     newRow = Math.max(1, Math.min(12 - drag.rspan + 1, newRow));
     const blocks = state.variants[drag.variantId];
-    if (cellsOccupied(blocks, newCol, newRow, drag.cspan, drag.rspan, drag.blockId)) return;
-    const live = blocks.find(x => x.id === drag.blockId);
-    if (!live || (live.col === newCol && live.row === newRow)) return;
-    live.col = newCol;
-    live.row = newRow;
-    updateBlockDom(live, drag.variantId);
+    const newLayout = tryReplaceWithRepack(blocks, drag.blockId, newCol, newRow, drag.cspan, drag.rspan);
+    if (!newLayout) return;
+    applyLayout(blocks, newLayout, drag.variantId);
   };
 
   const onUp = () => {
@@ -1910,12 +1962,9 @@ function startBlockResize(e, b, variantId) {
     newCspan = Math.min(newCspan, 20 - drag.col + 1);
     newRspan = Math.min(newRspan, 12 - drag.row + 1);
     const blocks = state.variants[drag.variantId];
-    if (cellsOccupied(blocks, drag.col, drag.row, newCspan, newRspan, drag.blockId)) return;
-    const live = blocks.find(x => x.id === drag.blockId);
-    if (!live || (live.cspan === newCspan && live.rspan === newRspan)) return;
-    live.cspan = newCspan;
-    live.rspan = newRspan;
-    updateBlockDom(live, drag.variantId);
+    const newLayout = tryReplaceWithRepack(blocks, drag.blockId, drag.col, drag.row, newCspan, newRspan);
+    if (!newLayout) return;
+    applyLayout(blocks, newLayout, drag.variantId);
   };
 
   const onUp = () => {
