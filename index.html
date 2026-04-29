@@ -1981,20 +1981,60 @@ function parkBlock() {
   showToast('Убрано в хранилище');
 }
 
+function aspectShrinks(origCspan, origRspan) {
+  const seen = new Set();
+  const pairs = [];
+  for (let c = origCspan - 1; c >= 1; c--) {
+    const r = Math.max(1, Math.round(c * origRspan / origCspan));
+    if (r > 12) continue;
+    const key = `${c}x${r}`;
+    if (!seen.has(key)) { seen.add(key); pairs.push({ cspan: c, rspan: r }); }
+  }
+  for (let r = origRspan - 1; r >= 1; r--) {
+    const c = Math.max(1, Math.round(r * origCspan / origRspan));
+    if (c > 20) continue;
+    const key = `${c}x${r}`;
+    if (!seen.has(key)) { seen.add(key); pairs.push({ cspan: c, rspan: r }); }
+  }
+  pairs.sort((a, b) => (b.cspan * b.rspan) - (a.cspan * a.rspan));
+  return pairs;
+}
+
 function restoreBlock(blockId, variantId) {
   const b = state.variants[variantId].find(x => x.id === blockId);
   if (!b || !b.parked) return;
   const blocks = state.variants[variantId];
   const prefCol = b.savedCol || 1;
   const prefRow = b.savedRow || 1;
+
   const spot = findFreeSpotNear(blocks, b.cspan, b.rspan, prefCol, prefRow, blockId);
-  if (!spot) {
-    showToast('Нет места — освободи или уменьши соседей');
+  if (spot) {
+    b.parked = false;
+    b.col = spot.col; b.row = spot.row;
+    state.selected = { variant: variantId, blockId };
     return;
   }
+
+  // Original size doesn't fit — search for the largest aspect-preserved shrink that does
+  let chosen = null;
+  for (const s of aspectShrinks(b.cspan, b.rspan)) {
+    const sp = findFreeSpotNear(blocks, s.cspan, s.rspan, prefCol, prefRow, blockId);
+    if (sp) { chosen = { ...s, col: sp.col, row: sp.row }; break; }
+  }
+  if (!chosen) {
+    showToast('Нет места даже для уменьшенного блока');
+    return;
+  }
+
+  const ok = confirm(
+    `Нет места для оригинального размера ${b.cspan}×${b.rspan}.\n` +
+    `Уменьшить до ${chosen.cspan}×${chosen.rspan} (то же соотношение) и поставить?`
+  );
+  if (!ok) return;
+
   b.parked = false;
-  b.col = spot.col;
-  b.row = spot.row;
+  b.col = chosen.col; b.row = chosen.row;
+  b.cspan = chosen.cspan; b.rspan = chosen.rspan;
   state.selected = { variant: variantId, blockId };
 }
 
