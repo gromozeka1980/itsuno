@@ -792,6 +792,107 @@
   }
   .focus-dot.active { background: #fff; }
 
+  /* ════════════════════════════════════════════════
+     SHELF (parked blocks tray)
+     ════════════════════════════════════════════════ */
+  #shelf {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 28px rgba(0,0,0,.10);
+    max-width: 80%;
+    overflow-x: auto;
+    z-index: 50;
+  }
+  #shelf.has-items { display: flex; }
+
+  .shelf-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    white-space: nowrap;
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+
+  .shelf-item {
+    position: relative;
+    width: 92px;
+    height: 56px;
+    border-radius: 8px;
+    background: #fafafa;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+    overflow: hidden;
+    background-size: cover;
+    background-position: center;
+  }
+  .shelf-item:hover {
+    transform: translateY(-2px);
+    border-color: var(--ink);
+    box-shadow: 0 4px 12px rgba(0,0,0,.10);
+  }
+  .shelf-item-label {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    right: 24px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    line-height: 1.1;
+  }
+  .shelf-item-meta {
+    position: absolute;
+    bottom: 4px;
+    left: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    pointer-events: none;
+  }
+  .shelf-item-x {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.12s, background 0.12s, color 0.12s;
+  }
+  .shelf-item:hover .shelf-item-x { opacity: 1; }
+  .shelf-item-x:hover { background: rgba(217, 45, 32, 0.12); color: #d92d20; }
+
   /* Toast */
   .toast {
     position: fixed;
@@ -837,6 +938,7 @@
     <div class="slide active" id="slide-v1"><div class="grid" id="grid-v1"></div></div>
     <div class="slide" id="slide-v2"><div class="grid" id="grid-v2"></div></div>
     <div class="slide" id="slide-v3"><div class="grid" id="grid-v3"></div></div>
+    <div id="shelf"><span class="shelf-tag">Хранилище</span></div>
   </div>
   <div id="compare-root">
     <div class="cmp-grid-bg"></div>
@@ -943,6 +1045,9 @@ const blockDefaults = (overrides = {}) => ({
   lineHeight: 1.1,
   borderWidth: 0,
   borderColor: '#363D49',
+  parked: false,
+  savedCol: null,
+  savedRow: null,
   ...overrides,
 });
 
@@ -1285,8 +1390,9 @@ function renderStage() {
     grid.style.gap = `${g.gridGap}px`;
     grid.style.padding = `${g.gridGap + 4}px`;
     grid.style.background = g.pageBg;
-    state.variants[v.id].forEach(b => grid.appendChild(renderBlock(b, v.id)));
+    state.variants[v.id].filter(b => !b.parked).forEach(b => grid.appendChild(renderBlock(b, v.id)));
   });
+  renderShelf();
   if (cmpRoot.classList.contains('active')) refreshCompare();
   if (focusOverlay.classList.contains('active')) renderFocus(focusOverlay.dataset.variant);
 }
@@ -1458,6 +1564,7 @@ function blockSection(b) {
     <button class="sb-btn" data-act="splitH" style="margin-top:8px;" ${b.cspan <= 1 ? 'disabled' : ''}>Делить ↔</button>
     <button class="sb-btn" data-act="splitV" ${b.rspan <= 1 ? 'disabled' : ''}>Делить ↕</button>
     <button class="sb-btn" data-act="duplicate">Дублировать блок</button>
+    <button class="sb-btn" data-act="park">Убрать в хранилище</button>
     <button class="sb-btn sb-btn--danger" data-act="delete">Удалить блок</button>
     <button class="sb-btn" data-act="deselect">Снять выделение</button>
   `);
@@ -1683,6 +1790,7 @@ function bindSidebarHandlers() {
         state.selected = null;
       }
       if (a === 'duplicate') duplicateBlock();
+      if (a === 'park') parkBlock();
       if (a === 'deselect') state.selected = null;
       if (a === 'splitH' && b.cspan > 1) {
         const half = Math.floor(b.cspan / 2);
@@ -1769,6 +1877,7 @@ document.getElementById('stage-wrap').addEventListener('click', (e) => {
 function cellsOccupied(blocks, col, row, cspan, rspan, excludeId) {
   return blocks.some(b => {
     if (b.id === excludeId) return false;
+    if (b.parked) return false;
     return !(col + cspan - 1 < b.col ||
              col > b.col + b.cspan - 1 ||
              row + rspan - 1 < b.row ||
@@ -1805,6 +1914,7 @@ function tryReplaceWithRepack(blocks, draggedId, newCol, newRow, newCspan, newRs
 
   const conflicts = blocks.filter(b =>
     b.id !== draggedId &&
+    !b.parked &&
     !(newCol + newCspan - 1 < b.col ||
       newCol > b.col + b.cspan - 1 ||
       newRow + newRspan - 1 < b.row ||
@@ -1858,6 +1968,108 @@ function createNewBlock() {
   });
   blocks.push(nb);
   state.selected = { variant: v, blockId: nb.id };
+}
+
+function parkBlock() {
+  if (!state.selected) return;
+  const b = getSelectedBlock();
+  if (!b) return;
+  b.savedCol = b.col;
+  b.savedRow = b.row;
+  b.parked = true;
+  state.selected = null;
+  showToast('Убрано в хранилище');
+}
+
+function restoreBlock(blockId, variantId) {
+  const b = state.variants[variantId].find(x => x.id === blockId);
+  if (!b || !b.parked) return;
+  const blocks = state.variants[variantId];
+  const prefCol = b.savedCol || 1;
+  const prefRow = b.savedRow || 1;
+  const spot = findFreeSpotNear(blocks, b.cspan, b.rspan, prefCol, prefRow, blockId);
+  if (!spot) {
+    showToast('Нет места — освободи или уменьши соседей');
+    return;
+  }
+  b.parked = false;
+  b.col = spot.col;
+  b.row = spot.row;
+  state.selected = { variant: variantId, blockId };
+}
+
+function renderShelf() {
+  const shelf = document.getElementById('shelf');
+  const v = state.active;
+  const parked = state.variants[v].filter(b => b.parked);
+  shelf.querySelectorAll('.shelf-item').forEach(el => el.remove());
+  const tag = shelf.querySelector('.shelf-tag');
+  if (parked.length === 0) {
+    shelf.classList.remove('has-items');
+    if (tag) tag.textContent = 'Хранилище';
+    return;
+  }
+  shelf.classList.add('has-items');
+  if (tag) tag.textContent = `Хранилище · ${parked.length}`;
+
+  parked.forEach(b => {
+    const item = document.createElement('div');
+    item.className = 'shelf-item';
+
+    let lblColor = 'var(--ink)';
+    let metaColor = 'var(--ink-mute)';
+
+    if (b.type === 'gradient' && b.gradient && GRADIENTS[b.gradient]) {
+      item.style.background = GRADIENTS[b.gradient].css.replace('{a}', 135);
+      lblColor = '#fff';
+      metaColor = 'rgba(255,255,255,0.8)';
+    } else if (b.type === 'image' && b.image && IMAGES[b.image]) {
+      item.style.backgroundImage = `url('${encUrl(IMAGES[b.image].file)}')`;
+      lblColor = '#fff';
+      metaColor = 'rgba(255,255,255,0.85)';
+    } else if ((b.type === 'hero' || b.type === 'heroh')) {
+      const heroKey = b.heroPhoto || 'valPortrait';
+      if (IMAGES[heroKey]) {
+        item.style.backgroundImage = `url('${encUrl(IMAGES[heroKey].file)}')`;
+        item.style.backgroundPosition = 'center 22%';
+      }
+      lblColor = '#fff';
+      metaColor = 'rgba(255,255,255,0.85)';
+    }
+
+    const lbl = document.createElement('div');
+    lbl.className = 'shelf-item-label';
+    lbl.style.color = lblColor;
+    if (lblColor === '#fff') lbl.style.textShadow = '0 1px 2px rgba(0,0,0,.5)';
+    lbl.textContent = (b.title || '').split('\n')[0].slice(0, 14) || `Блок`;
+    item.appendChild(lbl);
+
+    const meta = document.createElement('div');
+    meta.className = 'shelf-item-meta';
+    meta.style.color = metaColor;
+    if (metaColor.startsWith('rgba(255')) meta.style.textShadow = '0 1px 2px rgba(0,0,0,.5)';
+    meta.textContent = `${b.cspan}×${b.rspan}`;
+    item.appendChild(meta);
+
+    const x = document.createElement('button');
+    x.className = 'shelf-item-x';
+    x.textContent = '×';
+    x.title = 'Удалить блок';
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.variants[v] = state.variants[v].filter(z => z.id !== b.id);
+      renderAll();
+    });
+    item.appendChild(x);
+
+    item.title = `Вернуть в раскладку · ${b.cspan}×${b.rspan}`;
+    item.addEventListener('click', () => {
+      restoreBlock(b.id, v);
+      renderAll();
+    });
+
+    shelf.appendChild(item);
+  });
 }
 
 function duplicateBlock() {
@@ -2039,7 +2251,7 @@ function refreshCompare() {
     grid.style.gap = `${g.gridGap}px`;
     grid.style.padding = `${g.gridGap + 4}px`;
     grid.style.background = g.pageBg;
-    state.variants[v.id].forEach(b => grid.appendChild(renderBlock(b, v.id)));
+    state.variants[v.id].filter(b => !b.parked).forEach(b => grid.appendChild(renderBlock(b, v.id)));
   });
 }
 
@@ -2060,6 +2272,7 @@ function enterCompare() {
   sidebar.classList.add('hidden');
   cmpRoot.classList.add('active');
   document.getElementById('btn-newblock').style.visibility = 'hidden';
+  document.getElementById('shelf').style.display = 'none';
   refreshCompare();
   fitCompareInitial();
 }
@@ -2069,6 +2282,8 @@ function exitCompare() {
   stageWrap.classList.remove('hidden');
   sidebar.classList.remove('hidden');
   document.getElementById('btn-newblock').style.visibility = '';
+  document.getElementById('shelf').style.display = '';
+  renderShelf();
 }
 
 function setupCompareCanvas() {
@@ -2165,7 +2380,7 @@ function renderFocus(variantId) {
   grid.style.gap = `${g.gridGap}px`;
   grid.style.padding = `${g.gridGap + 4}px`;
   grid.style.background = g.pageBg;
-  state.variants[variantId].forEach(b => grid.appendChild(renderBlock(b, variantId)));
+  state.variants[variantId].filter(b => !b.parked).forEach(b => grid.appendChild(renderBlock(b, variantId)));
 
   const vw = window.innerWidth - 200;
   const vh = window.innerHeight - 240;
@@ -2297,7 +2512,7 @@ document.getElementById('btn-export').addEventListener('click', () => {
 
 function exportActiveVariant() {
   const g = state.global;
-  const blocks = state.variants[state.active];
+  const blocks = state.variants[state.active].filter(b => !b.parked);
   let blocksHtml = '';
   blocks.forEach(b => {
     const isAccent = b.type === 'gradient';
